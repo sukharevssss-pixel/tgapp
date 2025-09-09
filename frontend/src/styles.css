@@ -1,12 +1,3 @@
-/* Базовый стиль с гарантированным шрифтом */
-body {
-  font-family: Arial, Helvetica, sans-serif;
-  background: #f7fafc;
-  margin: 0;
-  padding: 0;
-}
-
-#root {
-  max-width: 720px;
-  margin: 20px auto;
-}
+﻿/* Простой базовый стиль, можно подключить Tailwind позже */
+body { font-family: Inter, Arial, sans-serif; background: #f7fafc; }
+#root { max-width: 720px; margin: 20px auto; }
