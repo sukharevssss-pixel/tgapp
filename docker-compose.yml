@@ -1,0 +1,26 @@
+﻿version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: tg-miniapp-backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend/app:/app
+      - ./tg_miniapp.db:/app/tg_miniapp.db
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - BOT_TOKEN=${BOT_TOKEN}
+    env_file:
+      - .env
+
+  frontend:   # 👈 теперь внутри services
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    environment:
+      - VITE_API_URL=https://odd-lamps-sing.loca.lt
