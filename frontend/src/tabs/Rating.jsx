@@ -1,11 +1,11 @@
-import React from 'react'
+п»їimport React from 'react'
 
 
 export default function Rating(){
 return (
 <div>
-<h2 className="text-lg">Рейтинг</h2>
-<p className="text-sm text-gray-600">Тут будут ники и win-rate.</p>
+<h2 className="text-lg">Р РµР№С‚РёРЅРі</h2>
+<p className="text-sm text-gray-600">РўСѓС‚ Р±СѓРґСѓС‚ РЅРёРєРё Рё win-rate.</p>
 </div>
 )
 }

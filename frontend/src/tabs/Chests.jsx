@@ -1,11 +1,11 @@
-import React from 'react'
+п»їimport React from 'react'
 
 
 export default function Chests(){
 return (
 <div>
-<h2 className="text-lg">Сундуки</h2>
-<p className="text-sm text-gray-600">Кнопка «Открыть сундук» — и выпадение монет.</p>
+<h2 className="text-lg">РЎСѓРЅРґСѓРєРё</h2>
+<p className="text-sm text-gray-600">РљРЅРѕРїРєР° В«РћС‚РєСЂС‹С‚СЊ СЃСѓРЅРґСѓРєВ» вЂ” Рё РІС‹РїР°РґРµРЅРёРµ РјРѕРЅРµС‚.</p>
 </div>
 )
 }
