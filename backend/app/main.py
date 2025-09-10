@@ -101,3 +101,11 @@ async def api_open_chest(payload: OpenChestPayload):
 @app.get("/api/rating")
 async def api_rating():
     return db.get_rating()
+
+@app.post("/api/init")
+async def api_init(payload: InitPayload):
+    db.ensure_user(payload.user_id, payload.username)
+    user = db.get_user(payload.user_id)
+    if not user:
+        raise HTTPException(status_code=500, detail="User creation failed")
+    return user  # теперь всегда { "user_id": 1, "username": "...", "balance": ... }
