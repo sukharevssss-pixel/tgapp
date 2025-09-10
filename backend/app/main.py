@@ -6,10 +6,10 @@ import db
 
 app = FastAPI(title="TG MiniApp Backend")
 
-# --- CORS для фронтенда ---
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # в проде лучше ограничить
+    allow_origins=["*"],  # ⚠️ в проде лучше ограничить
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -21,23 +21,23 @@ class InitPayload(BaseModel):
     username: str | None = None
 
 class CreatePollPayload(BaseModel):
-    user_id: int
+    telegram_id: int
     question: str
     options: list[str]
     bet_amount: int
 
 class PlaceBetPayload(BaseModel):
-    user_id: int
+    telegram_id: int
     poll_id: int
     option_id: int
 
 class ClosePollPayload(BaseModel):
-    user_id: int
+    telegram_id: int
     poll_id: int
     winning_option_id: int
 
 class OpenChestPayload(BaseModel):
-    user_id: int
+    telegram_id: int
     chest_id: int
 
 # --- Startup ---
@@ -48,7 +48,7 @@ def startup():
 # --- Пользователи ---
 @app.post("/api/auth")
 async def api_auth(payload: InitPayload):
-    """Регистрирует пользователя при первом входе или возвращает существующего"""
+    """Регистрация или возврат существующего пользователя"""
     db.ensure_user(payload.telegram_id, payload.username)
     user = db.get_user(payload.telegram_id)
     if not user:
@@ -67,7 +67,7 @@ async def api_me(telegram_id: int):
 async def api_create_poll(payload: CreatePollPayload):
     if len(payload.options) < 2:
         raise HTTPException(status_code=400, detail="Need at least 2 options")
-    poll_id = db.create_poll(payload.user_id, payload.question, payload.options, payload.bet_amount)
+    poll_id = db.create_poll(payload.telegram_id, payload.question, payload.options, payload.bet_amount)
     return {"ok": True, "poll_id": poll_id}
 
 @app.get("/api/polls")
@@ -83,14 +83,14 @@ async def api_get_poll(poll_id: int):
 
 @app.post("/api/bet")
 async def api_place_bet(payload: PlaceBetPayload):
-    res = db.place_bet(payload.user_id, payload.poll_id, payload.option_id)
+    res = db.place_bet(payload.telegram_id, payload.poll_id, payload.option_id)
     if not res.get("ok"):
         raise HTTPException(status_code=400, detail=res.get("error"))
     return res
 
 @app.post("/api/polls/close")
 async def api_close_poll(payload: ClosePollPayload):
-    res = db.close_poll(payload.user_id, payload.poll_id, payload.winning_option_id)
+    res = db.close_poll(payload.telegram_id, payload.poll_id, payload.winning_option_id)
     if not res.get("ok"):
         raise HTTPException(status_code=400, detail=res.get("error"))
     return res
@@ -102,7 +102,7 @@ async def api_chests():
 
 @app.post("/api/chests/open")
 async def api_open_chest(payload: OpenChestPayload):
-    res = db.open_chest(payload.user_id, payload.chest_id)
+    res = db.open_chest(payload.telegram_id, payload.chest_id)
     if not res.get("ok"):
         raise HTTPException(status_code=400, detail=res.get("error"))
     return res
