@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 export default function Polls({ user, apiRoot }) {
   const [polls, setPolls] = useState([]);
@@ -18,43 +18,77 @@ export default function Polls({ user, apiRoot }) {
     }
   };
 
-  useEffect(() => { fetchPolls(); }, []);
+  useEffect(() => {
+    fetchPolls();
+  }, []);
 
   const createPoll = async () => {
     setError("");
     const opts = optionsText.split("\n").map(s => s.trim()).filter(Boolean);
-    if (!question || opts.length < 2) { setError("Нужны вопрос и минимум 2 варианта"); return; }
+    if (!question || opts.length < 2) { 
+      setError("Нужны вопрос и минимум 2 варианта"); 
+      return; 
+    }
+
+    if (!user || !user.telegram_id) {
+      setError("Ошибка: пользователь не найден");
+      return;
+    }
+
     setLoading(true);
     try {
       const res = await fetch(`${apiRoot}/api/polls`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.user_id, question, options: opts, bet_amount: Number(betAmount) })
+        body: JSON.stringify({ 
+          user_id: user.telegram_id, 
+          question, 
+          options: opts, 
+          bet_amount: Number(betAmount) 
+        })
       });
       if (!res.ok) {
-        const txt = await res.text(); setError(txt || "Ошибка создания");
+        const txt = await res.text(); 
+        setError(txt || "Ошибка создания");
       } else {
-        setQuestion(""); setOptionsText(""); setBetAmount(100);
+        setQuestion(""); 
+        setOptionsText(""); 
+        setBetAmount(100);
         fetchPolls();
       }
-    } catch (e) { setError(String(e)); }
+    } catch (e) { 
+      setError(String(e)); 
+    }
     setLoading(false);
   };
 
   const placeBet = async (poll_id, option_id) => {
     setError("");
+
+    if (!user || !user.telegram_id) {
+      setError("Ошибка: пользователь не найден");
+      return;
+    }
+
     try {
       const res = await fetch(`${apiRoot}/api/bet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.user_id, poll_id, option_id })
+        body: JSON.stringify({ 
+          user_id: user.telegram_id, 
+          poll_id, 
+          option_id 
+        })
       });
       if (!res.ok) {
-        const jd = await res.json(); setError(jd.detail || "Ошибка ставки");
+        const jd = await res.json(); 
+        setError(jd.detail || "Ошибка ставки");
       } else {
         fetchPolls();
       }
-    } catch (e) { setError(String(e)); }
+    } catch (e) { 
+      setError(String(e)); 
+    }
   };
 
   return (
