@@ -111,8 +111,3 @@ async def api_open_chest(payload: OpenChestPayload):
 @app.get("/api/rating")
 async def api_rating():
     return db.get_rating()
-
-
-@app.get("/api/rating")
-async def api_rating():
-    return db.get_rating()
