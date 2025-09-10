@@ -23,19 +23,19 @@ export default function App() {
   const [loadingUser, setLoadingUser] = useState(true);
 
   useEffect(() => {
-    const initLocal = async (uid, username) => {
+    const initUser = async (telegram_id, username) => {
       try {
-        const res = await fetch(`${API}/api/init`, {
+        const res = await fetch(`${API}/api/auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ user_id: uid, username }),
+          body: JSON.stringify({ telegram_id, username }),
         });
         const data = await res.json();
         if (data?.ok && data.user) {
           setUser(data.user);
         }
       } catch (e) {
-        console.error("api init error", e);
+        console.error("api auth error", e);
       } finally {
         setLoadingUser(false);
       }
@@ -46,7 +46,7 @@ export default function App() {
         const initDataUnsafe = window.Telegram.WebApp.initDataUnsafe || {};
         if (initDataUnsafe.user) {
           const u = initDataUnsafe.user;
-          initLocal(u.id, u.username || `${u.first_name || "user"}`);
+          initUser(u.id, u.username || `${u.first_name || "user"}`);
           return;
         }
       } catch (e) {
@@ -55,7 +55,7 @@ export default function App() {
     }
 
     // fallback для локального запуска
-    initLocal(1, "testuser");
+    initUser(1, "testuser");
   }, []);
 
   if (loadingUser)
@@ -69,7 +69,7 @@ export default function App() {
 
       {/* ⚡️ Блок профиля */}
       <div className="profile-box">
-        👤 <b>{user.username}</b> | 🆔 {user.user_id} | 💰 {user.balance} монет
+        👤 <b>{user.username}</b> | 🆔 {user.telegram_id} | 💰 {user.balance} монет
       </div>
 
       <div className="tab-buttons">
