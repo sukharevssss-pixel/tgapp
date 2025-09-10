@@ -30,9 +30,19 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ telegram_id, username }),
         });
+
+        if (!res.ok) {
+          console.error("Ошибка ответа /api/auth", res.status);
+          return;
+        }
+
         const data = await res.json();
+        console.log("initUser response:", data);
+
         if (data?.ok && data.user) {
           setUser(data.user);
+        } else {
+          console.warn("Неверный ответ от сервера", data);
         }
       } catch (e) {
         console.error("api auth error", e);
@@ -92,3 +102,4 @@ export default function App() {
     </div>
   );
 }
+
