@@ -20,8 +20,6 @@ export default function App() {
   const [loadingUser, setLoadingUser] = useState(true);
 
   useEffect(() => {
-    // Если запускается как Telegram WebApp, берем from Telegram,
-    // иначе создаём тестового пользователя с id=1
     const initLocal = async (uid, username) => {
       try {
         const res = await fetch(`${API}/api/init`, {
@@ -30,7 +28,7 @@ export default function App() {
           body: JSON.stringify({ user_id: uid, username }),
         });
         const data = await res.json();
-        if (data?.user) setUser(data.user);
+        setUser(data); // ⚡ теперь бэк сразу возвращает user
       } catch (e) {
         console.error("api init error", e);
       } finally {
@@ -61,10 +59,22 @@ export default function App() {
     <div className="container">
       <h1>TG MiniApp — Demo</h1>
 
+      {user && (
+        <div className="profile-box">
+          👤 {user.username} | 💰 {user.balance} монет
+        </div>
+      )}
+
       <div className="tab-buttons">
-        <TabButton active={tab === "polls"} onClick={() => setTab("polls")}>📊 Опросы</TabButton>
-        <TabButton active={tab === "chests"} onClick={() => setTab("chests")}>🎁 Сундуки</TabButton>
-        <TabButton active={tab === "rating"} onClick={() => setTab("rating")}>🏆 Рейтинг</TabButton>
+        <TabButton active={tab === "polls"} onClick={() => setTab("polls")}>
+          📊 Опросы
+        </TabButton>
+        <TabButton active={tab === "chests"} onClick={() => setTab("chests")}>
+          🎁 Сундуки
+        </TabButton>
+        <TabButton active={tab === "rating"} onClick={() => setTab("rating")}>
+          🏆 Рейтинг
+        </TabButton>
       </div>
 
       <div className="content">
