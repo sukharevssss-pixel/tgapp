@@ -6,6 +6,7 @@ from . import db
 
 app = FastAPI(title="TG MiniApp Backend")
 
+# --- CORS для фронтенда ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],  # в проде лучше ограничить
@@ -14,8 +15,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Pydantic-схемы ---
 class InitPayload(BaseModel):
-    user_id: int
+    telegram_id: int
     username: str | None = None
 
 class CreatePollPayload(BaseModel):
@@ -38,29 +40,29 @@ class OpenChestPayload(BaseModel):
     user_id: int
     chest_id: int
 
-
+# --- Startup ---
 @app.on_event("startup")
 def startup():
     db.init_db()
 
-
-@app.post("/api/init")
-async def api_init(payload: InitPayload):
-    db.ensure_user(payload.user_id, payload.username)
-    user = db.get_user(payload.user_id)
+# --- Пользователи ---
+@app.post("/api/auth")
+async def api_auth(payload: InitPayload):
+    """Регистрирует пользователя при первом входе или возвращает существующего"""
+    db.ensure_user(payload.telegram_id, payload.username)
+    user = db.get_user(payload.telegram_id)
     if not user:
         raise HTTPException(status_code=500, detail="User creation failed")
     return {"ok": True, "user": user}
 
-
-@app.get("/api/me/{user_id}")
-async def api_me(user_id: int):
-    user = db.get_user(user_id)
+@app.get("/api/me/{telegram_id}")
+async def api_me(telegram_id: int):
+    user = db.get_user(telegram_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
-
+# --- Опросы ---
 @app.post("/api/polls")
 async def api_create_poll(payload: CreatePollPayload):
     if len(payload.options) < 2:
@@ -68,11 +70,9 @@ async def api_create_poll(payload: CreatePollPayload):
     poll_id = db.create_poll(payload.user_id, payload.question, payload.options, payload.bet_amount)
     return {"ok": True, "poll_id": poll_id}
 
-
 @app.get("/api/polls")
 async def api_list_polls():
     return db.list_polls(open_only=True)
-
 
 @app.get("/api/polls/{poll_id}")
 async def api_get_poll(poll_id: int):
@@ -81,14 +81,12 @@ async def api_get_poll(poll_id: int):
         raise HTTPException(status_code=404, detail="Poll not found")
     return poll
 
-
 @app.post("/api/bet")
 async def api_place_bet(payload: PlaceBetPayload):
     res = db.place_bet(payload.user_id, payload.poll_id, payload.option_id)
     if not res.get("ok"):
         raise HTTPException(status_code=400, detail=res.get("error"))
     return res
-
 
 @app.post("/api/polls/close")
 async def api_close_poll(payload: ClosePollPayload):
@@ -97,11 +95,10 @@ async def api_close_poll(payload: ClosePollPayload):
         raise HTTPException(status_code=400, detail=res.get("error"))
     return res
 
-
+# --- Сундуки ---
 @app.get("/api/chests")
 async def api_chests():
     return db.list_chests()
-
 
 @app.post("/api/chests/open")
 async def api_open_chest(payload: OpenChestPayload):
@@ -109,6 +106,11 @@ async def api_open_chest(payload: OpenChestPayload):
     if not res.get("ok"):
         raise HTTPException(status_code=400, detail=res.get("error"))
     return res
+
+# --- Рейтинг ---
+@app.get("/api/rating")
+async def api_rating():
+    return db.get_rating()
 
 
 @app.get("/api/rating")
