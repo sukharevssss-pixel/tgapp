@@ -28,7 +28,7 @@ export default function App() {
           body: JSON.stringify({ user_id: uid, username }),
         });
         const data = await res.json();
-        setUser(data); // ⚡ теперь бэк сразу возвращает user
+        setUser(data); // API возвращает объект { user_id, username, balance }
       } catch (e) {
         console.error("api init error", e);
       } finally {
@@ -49,21 +49,21 @@ export default function App() {
       }
     }
 
-    // fallback локально
+    // fallback для локального запуска
     initLocal(1, "testuser");
   }, []);
 
   if (loadingUser) return <div className="container">Загрузка пользователя...</div>;
+  if (!user) return <div className="container">Ошибка: пользователь не найден</div>;
 
   return (
     <div className="container">
       <h1>TG MiniApp — Demo</h1>
 
-      {user && (
-        <div className="profile-box">
-          👤 {user.username} | 💰 {user.balance} монет
-        </div>
-      )}
+      {/* ⚡️ Блок профиля */}
+      <div className="profile-box">
+        👤 <b>{user.username}</b> | 🆔 {user.user_id} | 💰 {user.balance} монет
+      </div>
 
       <div className="tab-buttons">
         <TabButton active={tab === "polls"} onClick={() => setTab("polls")}>
