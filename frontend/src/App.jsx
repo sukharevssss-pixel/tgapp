@@ -28,7 +28,7 @@ export default function App() {
           body: JSON.stringify({ user_id: uid, username }),
         });
         const data = await res.json();
-        setUser(data); // API возвращает объект { user_id, username, balance }
+        setUser(data); // потому что data = { user_id, username, balance }
       } catch (e) {
         console.error("api init error", e);
       } finally {
