@@ -2,7 +2,7 @@
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from fastapi.middleware.cors import CORSMiddleware
-from . import db
+import db
 
 app = FastAPI(title="TG MiniApp Backend")
 
