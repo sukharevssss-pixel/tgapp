@@ -1,4 +1,4 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 
 export default function Chests({ user, apiRoot }) {
   const [chests, setChests] = useState([]);
@@ -21,7 +21,7 @@ export default function Chests({ user, apiRoot }) {
   const openChest = async (chest_id) => {
     setMsg("");
 
-    if (!user || !user.user_id) {
+    if (!user || !user.telegram_id) {
       setMsg("Ошибка: пользователь не найден");
       return;
     }
@@ -30,7 +30,7 @@ export default function Chests({ user, apiRoot }) {
       const res = await fetch(`${apiRoot}/api/chests/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.user_id, chest_id }),
+        body: JSON.stringify({ user_id: user.telegram_id, chest_id }),
       });
 
       if (!res.ok) {
@@ -51,7 +51,6 @@ export default function Chests({ user, apiRoot }) {
     <div>
       <h2>Сундуки</h2>
 
-      {/* безопасный вывод баланса */}
       <div className="small">
         Баланс: {user && user.balance !== undefined ? user.balance : 0} монет
       </div>
@@ -90,4 +89,3 @@ export default function Chests({ user, apiRoot }) {
     </div>
   );
 }
-
