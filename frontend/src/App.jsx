@@ -8,7 +8,10 @@ const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
 
 function TabButton({ children, active, onClick }) {
   return (
-    <button className={`tab-button ${active ? "active" : ""}`} onClick={onClick}>
+    <button
+      className={`tab-button ${active ? "active" : ""}`}
+      onClick={onClick}
+    >
       {children}
     </button>
   );
@@ -28,7 +31,9 @@ export default function App() {
           body: JSON.stringify({ user_id: uid, username }),
         });
         const data = await res.json();
-        setUser(data); // потому что data = { user_id, username, balance }
+        if (data?.ok && data.user) {
+          setUser(data.user);
+        }
       } catch (e) {
         console.error("api init error", e);
       } finally {
@@ -53,8 +58,10 @@ export default function App() {
     initLocal(1, "testuser");
   }, []);
 
-  if (loadingUser) return <div className="container">Загрузка пользователя...</div>;
-  if (!user) return <div className="container">Ошибка: пользователь не найден</div>;
+  if (loadingUser)
+    return <div className="container">Загрузка пользователя...</div>;
+  if (!user)
+    return <div className="container">Ошибка: пользователь не найден</div>;
 
   return (
     <div className="container">
