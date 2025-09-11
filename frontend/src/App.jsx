@@ -73,6 +73,9 @@ export default function App() {
     <div className="container">
       <h1>TG MiniApp — Demo</h1>
 
+    {/* 🔍 Debug блок для проверки initData */}
+    <DebugUser />
+
       <div className="profile-box">
         👤 <b>{user.username}</b> | 🆔 {user.telegram_id} | 💰 {user.balance} монет
       </div>
