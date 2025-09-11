@@ -1,6 +1,6 @@
-/* index.css (улучшенная версия) */
+/* index.css (улучшенная и дополненная версия) */
 :root {
-  --bg-color: #f4f5f7; /* Сделаем фон чуть темнее для контраста */
+  --bg-color: #f4f5f7;
   --text-color: #172b4d;
   --muted-color: #6b7280;
   --accent-color: #3b82f6;
@@ -9,7 +9,7 @@
   --border-color: #dfe1e6;
   --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
   --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
-  --border-radius: 8px; /* Единый радиус скругления для всех элементов */
+  --border-radius: 8px;
 }
 
 * {
@@ -18,7 +18,6 @@
 
 body {
   margin: 0;
-  /* ✨ Используем красивый шрифт Inter, который вы уже подключили */
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
   background: var(--bg-color);
   color: var(--text-color);
@@ -26,7 +25,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Ограничиваем ширину и центрируем основной контейнер приложения */
 #root {
   max-width: 700px;
   margin: 20px auto;
@@ -54,13 +52,11 @@ h1, h2 {
 }
 
 /* --- Основные блоки --- */
-
 .content {
   border-radius: var(--border-radius);
   background: var(--white-color);
   padding: 16px;
   border: 1px solid var(--border-color);
-  /* ✨ Добавим тень для объема */
   box-shadow: var(--shadow-sm);
 }
 
@@ -77,7 +73,6 @@ h1, h2 {
   background: var(--white-color);
   font-weight: 600;
   cursor: pointer;
-  /* ✨ Плавный переход для всех свойств */
   transition: all 0.2s ease-in-out;
 }
 
@@ -94,7 +89,6 @@ h1, h2 {
 }
 
 /* --- Формы и кнопки --- */
-
 .form-row {
   margin-bottom: 12px;
   display: flex;
@@ -125,14 +119,12 @@ h1, h2 {
   color: white;
   font-weight: 600;
   cursor: pointer;
-  /* ✨ Плавный переход и небольшая тень */
   transition: all 0.2s ease-in-out;
   box-shadow: var(--shadow-sm);
 }
 
 .btn:hover {
   background: var(--accent-hover-color);
-  /* ✨ Приподнимаем кнопку при наведении */
   transform: translateY(-2px);
   box-shadow: var(--shadow-md);
 }
@@ -144,9 +136,8 @@ h1, h2 {
   box-shadow: none;
 }
 
-/* ✨ Стили для админ-кнопки из Polls.jsx */
 .btn-admin {
-  background-color: #f0ad4e; /* оранжевый */
+  background-color: #f0ad4e;
   padding: 8px 12px;
   border: none;
   border-radius: var(--border-radius);
@@ -162,26 +153,9 @@ h1, h2 {
 }
 
 /* --- Опросы (Polls) --- */
-
 .poll {
   background: var(--white-color);
   border: 1px solid var(--border-color);
   padding: 12px;
   margin-bottom: 12px;
-  border-radius: var(--border-radius);
-  transition: box-shadow 0.2s;
-}
-
-.poll:hover {
-  box-shadow: var(--shadow-sm);
-}
-
-.option {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 10px;
-  border-radius: 6px; /* Чуть меньше основного */
-  background: #fafafa;
-  margin-bottom: 6px;
-}
+  border-radius: var(--border-radius
