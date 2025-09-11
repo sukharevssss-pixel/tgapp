@@ -1,14 +1,14 @@
 import React, { useEffect, useState } from "react";
 
 export default function Polls({ user, apiRoot }) {
+  // ... (весь код до return остаётся без изменений) ...
   const [polls, setPolls] = useState([]);
   const [question, setQuestion] = useState("");
-  const [optionsText, setOptionsText] = useState(""); // Варианты, каждый с новой строки
+  const [optionsText, setOptionsText] = useState("");
   const [betAmount, setBetAmount] = useState(100);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  // Функция для загрузки активных опросов с сервера
   const fetchPolls = async () => {
     try {
       const res = await fetch(`${apiRoot}/api/polls`);
@@ -21,12 +21,10 @@ export default function Polls({ user, apiRoot }) {
     }
   };
 
-  // Загружаем опросы при первом рендере компонента
   useEffect(() => {
     fetchPolls();
   }, []);
 
-  // Функция для создания нового опроса
   const createPoll = async () => {
     setError("");
     const opts = optionsText.split("\n").map(s => s.trim()).filter(Boolean);
@@ -57,8 +55,7 @@ export default function Polls({ user, apiRoot }) {
         const txt = await res.text();
         throw new Error(txt || "Ошибка при создании опроса");
       }
-
-      // Сбрасываем поля и обновляем список опросов
+      
       setQuestion("");
       setOptionsText("");
       setBetAmount(100);
@@ -71,7 +68,6 @@ export default function Polls({ user, apiRoot }) {
     }
   };
 
-  // Функция для размещения ставки
   const placeBet = async (poll_id, option_id) => {
     setError("");
     if (!user || !user.telegram_id) {
@@ -95,7 +91,6 @@ export default function Polls({ user, apiRoot }) {
         throw new Error(jd.detail || "Ошибка ставки");
       }
       
-      // Обновляем данные опросов, чтобы увидеть изменения
       fetchPolls();
 
     } catch (e) {
@@ -103,7 +98,6 @@ export default function Polls({ user, apiRoot }) {
     }
   };
 
-  // Функция для закрытия опроса (только для создателя)
   const closePoll = async (poll_id, winning_option_id) => {
     setError("");
     if (!user || !user.telegram_id) {
@@ -111,7 +105,6 @@ export default function Polls({ user, apiRoot }) {
       return;
     }
 
-    // Запрашиваем подтверждение перед закрытием
     if (!window.confirm("Вы уверены, что хотите закрыть опрос с этим победителем? Это действие нельзя отменить.")) {
       return;
     }
@@ -121,7 +114,7 @@ export default function Polls({ user, apiRoot }) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          telegram_id: user.telegram_id, // Отправляем ID для проверки прав на бэкенде
+          telegram_id: user.telegram_id,
           poll_id,
           winning_option_id
         })
@@ -132,7 +125,6 @@ export default function Polls({ user, apiRoot }) {
         throw new Error(jd.detail || "Ошибка при закрытии опроса");
       }
       
-      // Обновляем список, чтобы закрытый опрос исчез
       fetchPolls();
 
     } catch (e) {
@@ -142,35 +134,17 @@ export default function Polls({ user, apiRoot }) {
 
   return (
     <div>
+      {/* ... (форма создания опроса без изменений) ... */}
       <h2>Создать опрос</h2>
       <div className="form-row">
-        <input
-          className="input"
-          placeholder="Вопрос"
-          value={question}
-          onChange={e => setQuestion(e.target.value)}
-        />
-        <input
-          type="number"
-          className="input"
-          style={{ maxWidth: 120 }}
-          value={betAmount}
-          onChange={e => setBetAmount(e.target.value)}
-        />
+        <input className="input" placeholder="Вопрос" value={question} onChange={e => setQuestion(e.target.value)} />
+        <input type="number" className="input" style={{ maxWidth: 120 }} value={betAmount} onChange={e => setBetAmount(e.target.value)} />
       </div>
       <div className="form-row">
-        <textarea
-          className="input"
-          rows={3}
-          placeholder="Каждый вариант с новой строки"
-          value={optionsText}
-          onChange={e => setOptionsText(e.target.value)}
-        />
+        <textarea className="input" rows={3} placeholder="Каждый вариант с новой строки" value={optionsText} onChange={e => setOptionsText(e.target.value)} />
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 12, alignItems: "center" }}>
-        <button className="btn" onClick={createPoll} disabled={loading}>
-          {loading ? "Создание..." : "Создать опрос"}
-        </button>
+        <button className="btn" onClick={createPoll} disabled={loading}>{loading ? "Создание..." : "Создать опрос"}</button>
         <div className="small">Ставка с участника: {betAmount} монет</div>
       </div>
       {error && <div className="error">{error}</div>}
@@ -193,24 +167,11 @@ export default function Polls({ user, apiRoot }) {
                 <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                   <div className="small">Всего поставлено: {opt.total_bet}</div>
                   
-                  {/* Логика отображения кнопок */}
-                  {user && user.telegram_id === p.creator_id ? (
-                    // Если текущий пользователь — создатель, показать кнопку для выбора победителя
-                    <button className="btn-admin" title="Выбрать как победителя и закрыть опрос" onClick={() => closePoll(p.id, opt.id)}>
-                      👑 Победитель
-                    </button>
-                  ) : (
-                    // Иначе показать кнопку для ставки
-                    <button className="btn" onClick={() => placeBet(p.id, opt.id)}>
-                      Сделать ставку
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
+                  {/* --- ✨ НАЧАЛО ИЗМЕНЕНИЙ ✨ --- */}
+
+                  {/* Кнопка для ставки теперь видна всем, включая создателя */}
+                  <button className="btn" onClick={() => placeBet(p.id, opt.id)}>
+                    Сделать ставку
+                  </button>
+                  
+                  {/* Кнопка
