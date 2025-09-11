@@ -30,7 +30,7 @@ export default function Chests({ user, apiRoot }) {
       const res = await fetch(`${apiRoot}/api/chests/open`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: user.telegram_id, chest_id }),
+        body: JSON.stringify({ telegram_id: user.telegram_id, chest_id }),
       });
 
       if (!res.ok) {
