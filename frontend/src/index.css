@@ -1,34 +1,187 @@
-﻿/* index.css */
-:root{
-  --bg: #f7fafc;
-  --muted: #666;
-  --accent: #3b82f6;
+/* index.css (улучшенная версия) */
+:root {
+  --bg-color: #f4f5f7; /* Сделаем фон чуть темнее для контраста */
+  --text-color: #172b4d;
+  --muted-color: #6b7280;
+  --accent-color: #3b82f6;
+  --accent-hover-color: #2563eb;
+  --white-color: #ffffff;
+  --border-color: #dfe1e6;
+  --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1);
+  --border-radius: 8px; /* Единый радиус скругления для всех элементов */
 }
-*{box-sizing:border-box}
+
+* {
+  box-sizing: border-box;
+}
+
 body {
   margin: 0;
-  font-family: Arial, Helvetica, sans-serif;
-  background: var(--bg);
-  color: #111;
+  /* ✨ Используем красивый шрифт Inter, который вы уже подключили */
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background: var(--bg-color);
+  color: var(--text-color);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
-#root { max-width: 900px; margin: 20px auto; padding: 0 12px; }
-.container { padding: 16px; }
-h1 { font-size: 24px; margin-bottom: 12px; }
-.tab-buttons { display:flex; gap:8px; margin-bottom: 12px; }
+
+/* Ограничиваем ширину и центрируем основной контейнер приложения */
+#root {
+  max-width: 700px;
+  margin: 20px auto;
+  padding: 0 16px;
+}
+
+h1, h2 {
+  font-weight: 600;
+  margin-top: 0;
+}
+
+.small {
+  font-size: 13px;
+  color: var(--muted-color);
+}
+
+.error {
+  color: #b91c1c;
+  font-weight: 600;
+}
+
+.success {
+  color: #166534;
+  font-weight: 600;
+}
+
+/* --- Основные блоки --- */
+
+.content {
+  border-radius: var(--border-radius);
+  background: var(--white-color);
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  /* ✨ Добавим тень для объема */
+  box-shadow: var(--shadow-sm);
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
 .tab-button {
-  padding:6px 10px; border-radius:6px; border:1px solid #ccc; background:#fff; cursor:pointer;
+  padding: 8px 14px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  background: var(--white-color);
+  font-weight: 600;
+  cursor: pointer;
+  /* ✨ Плавный переход для всех свойств */
+  transition: all 0.2s ease-in-out;
 }
-.tab-button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
-.content { border-radius:8px; background:#fff; padding:12px; border:1px solid #e6e6e6; }
-.small { font-size:13px; color:var(--muted) }
-.form-row { margin-bottom:10px; display:flex; gap:8px; align-items:center; }
-.input { padding:8px 10px; border-radius:6px; border:1px solid #ddd; min-width:0; flex:1; }
-.btn { padding:8px 12px; border-radius:6px; border: none; background:var(--accent); color:white; cursor:pointer; }
-.btn.secondary { background:#6b7280; }
-.poll { border:1px dashed #eee; padding:10px; margin-bottom:10px; border-radius:6px; }
-.option { display:flex; justify-content:space-between; padding:8px; border-radius:6px; background:#fafafa; margin-bottom:6px; }
-.center { text-align:center; }
-.error { color: #b91c1c; font-weight:600; }
-.success { color: #166534; font-weight:600; }
-.table { width:100%; border-collapse:collapse; }
-.table th, .table td { padding:8px; border-bottom:1px solid #f0f0f0; text-align:left; }
+
+.tab-button:hover {
+  background: #f0f2f5;
+  border-color: #c1c7d0;
+}
+
+.tab-button.active {
+  background: var(--accent-color);
+  color: var(--white-color);
+  border-color: var(--accent-color);
+  box-shadow: var(--shadow-sm);
+}
+
+/* --- Формы и кнопки --- */
+
+.form-row {
+  margin-bottom: 12px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.input {
+  padding: 10px 12px;
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+  min-width: 0;
+  flex: 1;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+}
+
+.btn {
+  padding: 10px 16px;
+  border-radius: var(--border-radius);
+  border: none;
+  background: var(--accent-color);
+  color: white;
+  font-weight: 600;
+  cursor: pointer;
+  /* ✨ Плавный переход и небольшая тень */
+  transition: all 0.2s ease-in-out;
+  box-shadow: var(--shadow-sm);
+}
+
+.btn:hover {
+  background: var(--accent-hover-color);
+  /* ✨ Приподнимаем кнопку при наведении */
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+}
+
+.btn:disabled {
+  background: #9fafc1;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* ✨ Стили для админ-кнопки из Polls.jsx */
+.btn-admin {
+  background-color: #f0ad4e; /* оранжевый */
+  padding: 8px 12px;
+  border: none;
+  border-radius: var(--border-radius);
+  color: white;
+  cursor: pointer;
+  font-weight: 600;
+  transition: all 0.2s ease-in-out;
+}
+
+.btn-admin:hover {
+  background-color: #ec9b3b;
+  transform: translateY(-1px);
+}
+
+/* --- Опросы (Polls) --- */
+
+.poll {
+  background: var(--white-color);
+  border: 1px solid var(--border-color);
+  padding: 12px;
+  margin-bottom: 12px;
+  border-radius: var(--border-radius);
+  transition: box-shadow 0.2s;
+}
+
+.poll:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border-radius: 6px; /* Чуть меньше основного */
+  background: #fafafa;
+  margin-bottom: 6px;
+}
