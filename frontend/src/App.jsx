@@ -2,8 +2,10 @@ import React, { useEffect, useState } from "react";
 import Polls from "./tabs/Polls";
 import Chests from "./tabs/Chests";
 import Rating from "./tabs/Rating";
+import "./App.css";
 
-const API_URL = "https://tgapp-4ugf.onrender.com"; // ваш backend
+// URL вашего бэкенда
+const API_URL = "https://tgapp-4ugf.onrender.com"; 
 
 function TabButton({ children, active, onClick }) {
   return (
@@ -20,8 +22,6 @@ export default function App() {
   const [tab, setTab] = useState("polls");
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
-  // Добавим состояние для отладочной информации
-  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(() => {
     const initUser = async (telegram_id, username) => {
@@ -31,65 +31,59 @@ export default function App() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ telegram_id, username }),
         });
-
         const data = await res.json();
         if (data?.ok && data.user) {
           setUser(data.user);
         } else {
           console.warn("⚠️ Сервер вернул ошибку:", data);
-          setDebugInfo({ error: "Сервер вернул ошибку", details: data });
         }
       } catch (e) {
         console.error("🔥 Ошибка запроса api/auth:", e);
-        setDebugInfo({ error: "Ошибка запроса api/auth", details: e.message });
       } finally {
         setLoadingUser(false);
       }
     };
 
-    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
-
-    // Попытка получить данные из Telegram WebApp
     const tg = window.Telegram?.WebApp;
-
-    // Выводим в консоль, чтобы видеть, что происходит
-    console.log("window.Telegram.WebApp:", tg);
-
     if (tg && tg.initDataUnsafe?.user) {
-      // ✅ Мы внутри Telegram, используем реальные данные
-      console.log("Приложение запущено в Telegram.");
       const u = tg.initDataUnsafe.user;
-      setDebugInfo({ message: "Данные из Telegram WebApp", user: u });
       initUser(u.id, u.username || u.first_name || "user");
     } else {
-      // ❌ Мы в обычном браузере, используем тестовые данные
-      console.log("Приложение запущено в браузере (режим разработки).");
-      setDebugInfo({ error: "❌ Telegram.WebApp не найден. Используется тестовый пользователь." });
-      // fallback для локального запуска (НЕ для продакшена!)
+      // Fallback для локального запуска
       initUser(1, "testuser");
     }
-
-    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
   }, []);
+
+  /**
+   * Функция для обновления данных пользователя с сервера.
+   * Она будет передана в дочерние компоненты, которые могут менять баланс.
+   */
+  const refreshUser = async () => {
+    if (!user) return;
+    try {
+      const res = await fetch(`${API_URL}/api/me/${user.telegram_id}`);
+      if (res.ok) {
+        const updatedUserData = await res.json();
+        // Обновляем состояние, сохраняя предыдущие данные на случай,
+        // если API вернет неполный объект
+        setUser(prevUser => ({ ...prevUser, ...updatedUserData }));
+      }
+    } catch (e) {
+      console.error("🔥 Ошибка обновления пользователя:", e);
+    }
+  };
 
   if (loadingUser) {
     return <div className="container">⏳ Загрузка пользователя...</div>;
   }
 
   if (!user) {
-    // Показываем отладочную информацию, если есть ошибка
-    return (
-      <div className="container">
-        ❌ Ошибка: пользователь не найден
-        {debugInfo?.error && <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{JSON.stringify(debugInfo, null, 2)}</pre>}
-      </div>
-    );
+    return <div className="container">❌ Ошибка: пользователь не найден</div>;
   }
 
   return (
     <div className="container">
       <h1>TG MiniApp — Demo</h1>
-
       <div className="profile-box">
         👤 <b>{user.username}</b> | 🆔 {user.telegram_id} | 💰 {user.balance} монет
       </div>
@@ -108,7 +102,13 @@ export default function App() {
 
       <div className="content">
         {tab === "polls" && <Polls user={user} apiRoot={API_URL} />}
-        {tab === "chests" && <Chests user={user} apiRoot={API_URL} />}
+        {tab === "chests" && (
+          <Chests 
+            user={user} 
+            apiRoot={API_URL} 
+            onBalanceChange={refreshUser} // Передаем функцию как пропс
+          />
+        )}
         {tab === "rating" && <Rating apiRoot={API_URL} />}
       </div>
     </div>
