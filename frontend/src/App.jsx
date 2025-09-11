@@ -5,7 +5,7 @@ import Rating from "./tabs/Rating";
 import "./App.css";
 import DebugUser from "./DebugUser";
 
-const API_URL = "https://tgapp-4ugf.onrender.com"; // твой backend
+const API_URL = "https://tgapp-4ugf.onrender.com"; // ваш backend
 
 function TabButton({ children, active, onClick }) {
   return (
@@ -22,6 +22,8 @@ export default function App() {
   const [tab, setTab] = useState("polls");
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
+  // Добавим состояние для отладочной информации
+  const [debugInfo, setDebugInfo] = useState(null);
 
   useEffect(() => {
     const initUser = async (telegram_id, username) => {
@@ -37,28 +39,39 @@ export default function App() {
           setUser(data.user);
         } else {
           console.warn("⚠️ Сервер вернул ошибку:", data);
+          setDebugInfo({ error: "Сервер вернул ошибку", details: data });
         }
       } catch (e) {
         console.error("🔥 Ошибка запроса api/auth:", e);
+        setDebugInfo({ error: "Ошибка запроса api/auth", details: e.message });
       } finally {
         setLoadingUser(false);
       }
     };
 
-    // ⚡️ получаем юзера из Telegram WebApp
-    try {
-      const tg = window.Telegram?.WebApp;
-      const u = tg?.initDataUnsafe?.user;
-      if (u) {
-        initUser(u.id, u.username || u.first_name || "user");
-        return;
-      }
-    } catch (e) {
-      console.warn("⚠️ Telegram WebApp init error:", e);
+    // --- НАЧАЛО ИЗМЕНЕНИЙ ---
+
+    // Попытка получить данные из Telegram WebApp
+    const tg = window.Telegram?.WebApp;
+
+    // Выводим в консоль, чтобы видеть, что происходит
+    console.log("window.Telegram.WebApp:", tg);
+
+    if (tg && tg.initDataUnsafe?.user) {
+      // ✅ Мы внутри Telegram, используем реальные данные
+      console.log("Приложение запущено в Telegram.");
+      const u = tg.initDataUnsafe.user;
+      setDebugInfo({ message: "Данные из Telegram WebApp", user: u });
+      initUser(u.id, u.username || u.first_name || "user");
+    } else {
+      // ❌ Мы в обычном браузере, используем тестовые данные
+      console.log("Приложение запущено в браузере (режим разработки).");
+      setDebugInfo({ error: "❌ Telegram.WebApp не найден. Используется тестовый пользователь." });
+      // fallback для локального запуска (НЕ для продакшена!)
+      initUser(1, "testuser");
     }
 
-    // fallback для локального запуска (НЕ для продакшена!)
-    initUser(1, "testuser");
+    // --- КОНЕЦ ИЗМЕНЕНИЙ ---
   }, []);
 
   if (loadingUser) {
@@ -66,15 +79,30 @@ export default function App() {
   }
 
   if (!user) {
-    return <div className="container">❌ Ошибка: пользователь не найден</div>;
+    // Показываем отладочную информацию, если есть ошибка
+    return (
+      <div className="container">
+        ❌ Ошибка: пользователь не найден
+        {debugInfo?.error && <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{JSON.stringify(debugInfo, null, 2)}</pre>}
+      </div>
+    );
   }
 
   return (
     <div className="container">
       <h1>TG MiniApp — Demo</h1>
 
-    {/* 🔍 Debug блок для проверки initData */}
-    <DebugUser />
+      {/* 🔍 Отображаем блок с отладочной информацией */}
+      {debugInfo && (
+        <div style={{ background: "#333", padding: '10px', borderRadius: '8px', margin: '10px 0' }}>
+          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", color: 'white' }}>
+            {JSON.stringify(debugInfo, null, 2)}
+          </pre>
+        </div>
+      )}
+      
+      {/* Ваш DebugUser компонент тоже можно использовать */}
+      {/* <DebugUser /> */}
 
       <div className="profile-box">
         👤 <b>{user.username}</b> | 🆔 {user.telegram_id} | 💰 {user.balance} монет
@@ -100,4 +128,3 @@ export default function App() {
     </div>
   );
 }
-
