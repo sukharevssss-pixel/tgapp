@@ -4,7 +4,7 @@ import Chests from "./tabs/Chests";
 import Rating from "./tabs/Rating";
 import "./App.css";
 
-const API = import.meta.env.VITE_API_URL || "http://localhost:8000";
+const API_URL = "https://tgapp-4ugf.onrender.com";
 
 function TabButton({ children, active, onClick }) {
   return (
