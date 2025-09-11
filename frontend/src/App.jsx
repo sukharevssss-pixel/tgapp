@@ -23,6 +23,22 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [loadingUser, setLoadingUser] = useState(true);
 
+useEffect(() => {
+  console.log("window.Telegram:", window.Telegram);
+  console.log("window.Telegram?.WebApp:", window.Telegram?.WebApp);
+
+  if (window.Telegram && window.Telegram.WebApp) {
+    try {
+      const initDataUnsafe = window.Telegram.WebApp.initDataUnsafe || {};
+      console.log("initDataUnsafe:", initDataUnsafe);
+      if (initDataUnsafe.user) {
+        const u = initDataUnsafe.user;
+        initUser(u.id, u.username || `${u.first_name || "user"}`);
+        return;
+      }
+    } catch (e) {
+      console.warn("Telegram WebApp init error", e);
+
   useEffect(() => {
     const initUser = async (telegram_id, username) => {
       try {
