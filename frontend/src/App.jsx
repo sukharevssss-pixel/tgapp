@@ -2,7 +2,6 @@ import React, { useEffect, useState } from "react";
 import Polls from "./tabs/Polls";
 import Chests from "./tabs/Chests";
 import Rating from "./tabs/Rating";
-import "./App.css";
 
 // URL вашего бэкенда
 const API_URL = "https://tgapp-4ugf.onrender.com"; 
