@@ -92,18 +92,6 @@ export default function App() {
     <div className="container">
       <h1>TG MiniApp — Demo</h1>
 
-      {/* 🔍 Отображаем блок с отладочной информацией */}
-      {debugInfo && (
-        <div style={{ background: "#333", padding: '10px', borderRadius: '8px', margin: '10px 0' }}>
-          <pre style={{ whiteSpace: "pre-wrap", wordBreak: "break-all", color: 'white' }}>
-            {JSON.stringify(debugInfo, null, 2)}
-          </pre>
-        </div>
-      )}
-      
-      {/* Ваш DebugUser компонент тоже можно использовать */}
-      {/* <DebugUser /> */}
-
       <div className="profile-box">
         👤 <b>{user.username}</b> | 🆔 {user.telegram_id} | 💰 {user.balance} монет
       </div>
