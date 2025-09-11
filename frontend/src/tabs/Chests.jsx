@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 
-export default function Chests({ user, apiRoot }) {
+export default function Chests({ user, apiRoot, onBalanceChange }) {
   const [chests, setChests] = useState([]);
   const [msg, setMsg] = useState("");
+  const [loadingChest, setLoadingChest] = useState(null); // ID сундука, который открывается
 
   const fetchChests = async () => {
     try {
@@ -10,7 +11,7 @@ export default function Chests({ user, apiRoot }) {
       const data = await res.json();
       setChests(data || []);
     } catch (e) {
-      console.error(e);
+      console.error("Ошибка загрузки сундуков:", e);
     }
   };
 
@@ -20,9 +21,11 @@ export default function Chests({ user, apiRoot }) {
 
   const openChest = async (chest_id) => {
     setMsg("");
+    setLoadingChest(chest_id); // Блокируем кнопку
 
     if (!user || !user.telegram_id) {
       setMsg("Ошибка: пользователь не найден");
+      setLoadingChest(null);
       return;
     }
 
@@ -33,17 +36,21 @@ export default function Chests({ user, apiRoot }) {
         body: JSON.stringify({ telegram_id: user.telegram_id, chest_id }),
       });
 
+      const data = await res.json();
       if (!res.ok) {
-        const jd = await res.json();
-        setMsg(jd.detail || "Ошибка");
+        setMsg(data.detail || "Произошла ошибка");
       } else {
-        const data = await res.json();
-        setMsg(`Выпало: ${data.reward} монет!`);
+        setMsg(`🎉 Выпало: ${data.reward} монет!`);
+        
+        // Вызываем функцию из родительского компонента для обновления баланса
+        if (onBalanceChange) {
+          onBalanceChange();
+        }
       }
-
-      fetchChests();
     } catch (e) {
       setMsg(String(e));
+    } finally {
+      setLoadingChest(null); // Разблокируем кнопку
     }
   };
 
@@ -51,11 +58,11 @@ export default function Chests({ user, apiRoot }) {
     <div>
       <h2>Сундуки</h2>
 
-      <div className="small">
-        Баланс: {user && user.balance !== undefined ? user.balance : 0} монет
+      <div className="small" style={{ marginBottom: 12 }}>
+        Ваш баланс: {user?.balance ?? 0} монет
       </div>
 
-      <div style={{ marginTop: 12 }}>
+      <div>
         {chests.map((c) => (
           <div
             key={c.id}
@@ -73,8 +80,12 @@ export default function Chests({ user, apiRoot }) {
               </div>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button className="btn" onClick={() => openChest(c.id)}>
-                Открыть
+              <button 
+                className="btn" 
+                onClick={() => openChest(c.id)}
+                disabled={loadingChest === c.id} // Кнопка неактивна во время загрузки
+              >
+                {loadingChest === c.id ? "Открываем..." : "Открыть"}
               </button>
             </div>
           </div>
@@ -82,7 +93,7 @@ export default function Chests({ user, apiRoot }) {
       </div>
 
       {msg && (
-        <div style={{ marginTop: 10 }} className="success">
+        <div style={{ marginTop: 10, fontWeight: 600 }} className={msg.includes("Ошибка") ? "error" : "success"}>
           {msg}
         </div>
       )}
