@@ -1,9 +1,14 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 
 export default function Chests({ user, apiRoot, onBalanceChange }) {
   const [chests, setChests] = useState([]);
   const [msg, setMsg] = useState("");
-  const [loadingChest, setLoadingChest] = useState(null); // ID сундука, который открывается
+  
+  // Состояние для управления анимацией
+  const [animationState, setAnimationState] = useState({ id: null, reward: null, spinning: false });
+
+  // Ссылка на таймер для сброса анимации
+  const animationTimeoutRef = useRef(null);
 
   const fetchChests = async () => {
     try {
@@ -17,17 +22,28 @@ export default function Chests({ user, apiRoot, onBalanceChange }) {
 
   useEffect(() => {
     fetchChests();
+    // Очищаем таймер при размонтировании компонента
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
   }, []);
 
   const openChest = async (chest_id) => {
+    // Очищаем предыдущее сообщение и таймер
     setMsg("");
-    setLoadingChest(chest_id); // Блокируем кнопку
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
 
     if (!user || !user.telegram_id) {
       setMsg("Ошибка: пользователь не найден");
-      setLoadingChest(null);
       return;
     }
+
+    // Запускаем анимацию для конкретного сундука
+    setAnimationState({ id: chest_id, reward: null, spinning: true });
 
     try {
       const res = await fetch(`${apiRoot}/api/chests/open`, {
@@ -35,66 +51,76 @@ export default function Chests({ user, apiRoot, onBalanceChange }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ telegram_id: user.telegram_id, chest_id }),
       });
-
       const data = await res.json();
+
       if (!res.ok) {
-        setMsg(data.detail || "Произошла ошибка");
-      } else {
-        setMsg(`🎉 Выпало: ${data.reward} монет!`);
-        
-        // Вызываем функцию из родительского компонента для обновления баланса
-        if (onBalanceChange) {
-          onBalanceChange();
-        }
+        throw new Error(data.detail || "Произошла ошибка");
       }
+      
+      // Останавливаем анимацию на финальной награде
+      setAnimationState({ id: chest_id, reward: data.reward, spinning: false });
+      
+      // Вызываем обновление баланса в родительском компоненте
+      if (onBalanceChange) {
+        onBalanceChange();
+      }
+
+      // Убираем блок с анимацией через 3 секунды
+      animationTimeoutRef.current = setTimeout(() => {
+        setAnimationState({ id: null, reward: null, spinning: false });
+      }, 3000);
+
     } catch (e) {
-      setMsg(String(e));
-    } finally {
-      setLoadingChest(null); // Разблокируем кнопку
+      setMsg(e.message);
+      // Сбрасываем анимацию при ошибке
+      setAnimationState({ id: null, reward: null, spinning: false });
     }
   };
 
   return (
     <div>
       <h2>Сундуки</h2>
-
       <div className="small" style={{ marginBottom: 12 }}>
         Ваш баланс: {user?.balance ?? 0} монет
       </div>
-
       <div>
         {chests.map((c) => (
-          <div
-            key={c.id}
-            className="poll"
-            style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-            }}
-          >
+          <div key={c.id} className="poll" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontWeight: 600 }}>{c.name}</div>
-              <div className="small">
-                Цена: {c.price} — Награда: {c.reward_min}–{c.reward_max}
-              </div>
+              <div className="small">Цена: {c.price}</div>
             </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <button 
-                className="btn" 
-                onClick={() => openChest(c.id)}
-                disabled={loadingChest === c.id} // Кнопка неактивна во время загрузки
-              >
-                {loadingChest === c.id ? "Открываем..." : "Открыть"}
-              </button>
-            </div>
+            <button
+              className="btn"
+              onClick={() => openChest(c.id)}
+              disabled={animationState.spinning} // Блокируем все кнопки во время любой анимации
+            >
+              {animationState.id === c.id && animationState.spinning ? "Открываем..." : "Открыть"}
+            </button>
           </div>
         ))}
       </div>
 
-      {msg && (
-        <div style={{ marginTop: 10, fontWeight: 600 }} className={msg.includes("Ошибка") ? "error" : "success"}>
-          {msg}
+      {/* Блок для вывода сообщения об ошибке */}
+      {msg && <div style={{ marginTop: 10 }} className="error">{msg}</div>}
+
+      {/* Новый блок для анимации и результата */}
+      {animationState.id && (
+        <div className="reward-animation">
+          <div className="small" style={{ marginBottom: '5px' }}>Ваш выигрыш:</div>
+          <div className="spinner-container">
+            {animationState.spinning && (
+              <div className="spinner-reel">
+                {/* Генерируем случайные числа для эффекта прокрутки */}
+                {[...Array(10)].map((_, i) => <div key={i}>{Math.floor(Math.random() * 800) + 100}</div>)}
+              </div>
+            )}
+            {animationState.reward !== null && (
+              <div className="spinner-final-reward">
+                {animationState.reward}
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>
