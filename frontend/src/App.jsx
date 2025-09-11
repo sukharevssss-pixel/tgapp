@@ -4,7 +4,7 @@ import Chests from "./tabs/Chests";
 import Rating from "./tabs/Rating";
 import "./App.css";
 
-const API_URL = "https://tgapp-4ugf.onrender.com";
+const API_URL = "https://tgapp-4ugf.onrender.com"; // ✅ правильный API root
 
 function TabButton({ children, active, onClick }) {
   return (
@@ -24,28 +24,29 @@ export default function App() {
 
   useEffect(() => {
     const initUser = async (telegram_id, username) => {
+      console.log("📤 Отправляем запрос на /api/auth:", telegram_id, username);
       try {
-        const res = await fetch(`${API}/api/auth`, {
+        const res = await fetch(`${API_URL}/api/auth`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ telegram_id, username }),
         });
 
         if (!res.ok) {
-          console.error("Ошибка ответа /api/auth", res.status);
+          console.error("❌ Ошибка ответа /api/auth:", res.status);
           return;
         }
 
         const data = await res.json();
-        console.log("initUser response:", data);
+        console.log("📥 Ответ от /api/auth:", data);
 
         if (data?.ok && data.user) {
           setUser(data.user);
         } else {
-          console.warn("Неверный ответ от сервера", data);
+          console.warn("⚠️ Неверный ответ от сервера:", data);
         }
       } catch (e) {
-        console.error("api auth error", e);
+        console.error("🔥 Ошибка запроса api/auth:", e);
       } finally {
         setLoadingUser(false);
       }
@@ -54,13 +55,15 @@ export default function App() {
     if (window.Telegram && window.Telegram.WebApp) {
       try {
         const initDataUnsafe = window.Telegram.WebApp.initDataUnsafe || {};
+        console.log("🐞 initDataUnsafe:", initDataUnsafe);
+
         if (initDataUnsafe.user) {
           const u = initDataUnsafe.user;
           initUser(u.id, u.username || `${u.first_name || "user"}`);
           return;
         }
       } catch (e) {
-        console.warn("Telegram WebApp init error", e);
+        console.warn("⚠️ Ошибка инициализации Telegram WebApp:", e);
       }
     }
 
@@ -68,10 +71,13 @@ export default function App() {
     initUser(1, "testuser");
   }, []);
 
-  if (loadingUser)
-    return <div className="container">Загрузка пользователя...</div>;
-  if (!user)
-    return <div className="container">Ошибка: пользователь не найден</div>;
+  if (loadingUser) {
+    return <div className="container">⏳ Загрузка пользователя...</div>;
+  }
+
+  if (!user) {
+    return <div className="container">❌ Ошибка: пользователь не найден</div>;
+  }
 
   return (
     <div className="container">
@@ -95,11 +101,10 @@ export default function App() {
       </div>
 
       <div className="content">
-        {tab === "polls" && <Polls user={user} apiRoot={API} />}
-        {tab === "chests" && <Chests user={user} apiRoot={API} />}
-        {tab === "rating" && <Rating apiRoot={API} />}
+        {tab === "polls" && <Polls user={user} apiRoot={API_URL} />}
+        {tab === "chests" && <Chests user={user} apiRoot={API_URL} />}
+        {tab === "rating" && <Rating apiRoot={API_URL} />}
       </div>
     </div>
   );
 }
-
