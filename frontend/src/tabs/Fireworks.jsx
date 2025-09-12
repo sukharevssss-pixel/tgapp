@@ -1,4 +1,4 @@
-// src/tabs/Fireworks.jsx
+// src/tabs/Fireworks.jsx (Исправленная версия)
 
 import React, { useCallback } from "react";
 import Particles from "react-tsparticles";
@@ -13,15 +13,31 @@ const Fireworks = () => {
   // Конфигурация для эффекта салюта
   const options = {
     autoPlay: true,
-    background: {
-      color: {
-        value: "rgba(0,0,0,0)", // Прозрачный фон
-      },
-    },
     fullScreen: {
       enable: true,
       zIndex: 9999, // Поверх всех остальных элементов
     },
+    
+    // --- ИЗМЕНЕНИЕ №1: Явно делаем фон прозрачным ---
+    background: {
+      color: {
+        value: "transparent",
+      },
+    },
+
+    // --- ИЗМЕНЕНИЕ №2: Отключаем реакцию на клики, чтобы слой не мешал ---
+    interactivity: {
+      events: {
+        onClick: {
+          enable: false,
+        },
+        onHover: {
+          enable: false,
+        },
+        resize: true,
+      },
+    },
+
     detectRetina: true,
     duration: 0.4, // Длительность вспышек в секундах
     fpsLimit: 120,
@@ -70,37 +86,3 @@ const Fireworks = () => {
       size: {
         value: { min: 2, max: 4 },
       },
-      life: {
-        count: 1,
-        duration: {
-          value: {
-            min: 0.25,
-            max: 0.5,
-          },
-        },
-      },
-      move: {
-        enable: true,
-        gravity: {
-          enable: true,
-          acceleration: 20,
-        },
-        speed: { min: 5, max: 15 },
-        decay: 0.1,
-        direction: "none",
-        straight: false,
-        outModes: {
-          default: "destroy",
-          top: "none",
-        },
-      },
-    },
-    sounds: { // Можно добавить звуки!
-      enable: false, // Пока выключим
-    }
-  };
-
-  return <Particles id="tsparticles" init={particlesInit} options={options} />;
-};
-
-export default Fireworks;
