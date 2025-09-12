@@ -1,24 +1,43 @@
 import React, { useEffect, useState, useRef } from "react";
-import Fireworks from "./Fireworks"; // ✨ Импортируем наш новый компонент
-
-// ... (остальной код остается прежним до компонента)
+import Fireworks from "./Fireworks"; // Убедитесь, что путь правильный
 
 export default function Chests({ user, apiRoot, onBalanceChange }) {
   const [chests, setChests] = useState([]);
   const [msg, setMsg] = useState("");
   const [animationState, setAnimationState] = useState({ id: null, reward: null, spinning: false });
-  const [showFireworks, setShowFireworks] = useState(false); // ✨ Новое состояние для салюта
+  const [showFireworks, setShowFireworks] = useState(false);
 
   const animationTimeoutRef = useRef(null);
 
-  useEffect(() => { /* ... без изменений ... */ }, []);
-  const fetchChests = async () => { /* ... без изменений ... */ };
+  const fetchChests = async () => {
+    try {
+      const res = await fetch(`${apiRoot}/api/chests`);
+      if (!res.ok) throw new Error("Ошибка загрузки сундуков");
+      const data = await res.json();
+      setChests(data || []);
+    } catch (e) {
+      console.error(e);
+      setMsg(e.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchChests();
+
+    // ✨ Улучшение: Очищаем таймер, когда компонент "умирает"
+    return () => {
+      if (animationTimeoutRef.current) {
+        clearTimeout(animationTimeoutRef.current);
+      }
+    };
+  }, []); // Пустой массив зависимостей означает, что эффект выполнится 1 раз
 
   const openChest = async (chest_id) => {
-    // ... (начало функции без изменений) ...
     setMsg("");
-    setShowFireworks(false); // Убираем старый салют
-    if (animationTimeoutRef.current) clearTimeout(animationTimeoutRef.current);
+    setShowFireworks(false);
+    if (animationTimeoutRef.current) {
+      clearTimeout(animationTimeoutRef.current);
+    }
 
     if (!user || !user.telegram_id) {
       setMsg("Ошибка: пользователь не найден");
@@ -45,10 +64,8 @@ export default function Chests({ user, apiRoot, onBalanceChange }) {
         onBalanceChange();
       }
 
-      // ✨ Показываем салют! ✨
       setShowFireworks(true);
 
-      // Убираем анимацию и салют через 4 секунды
       animationTimeoutRef.current = setTimeout(() => {
         setAnimationState({ id: null, reward: null, spinning: false });
         setShowFireworks(false);
@@ -62,7 +79,6 @@ export default function Chests({ user, apiRoot, onBalanceChange }) {
 
   return (
     <div>
-      {/* ✨ Показываем салют, если showFireworks === true ✨ */}
       {showFireworks && <Fireworks />}
 
       <h2>Сундуки</h2>
@@ -71,10 +87,10 @@ export default function Chests({ user, apiRoot, onBalanceChange }) {
       </div>
       <div>
         {chests.map((c) => (
-          // ... (JSX для сундуков без изменений) ...
           <div key={c.id} className="poll" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
             <div>
               <div style={{ fontWeight: 600 }}>{c.name}</div>
+              {/* ✨ Улучшение: убрали отображение награды, т.к. ее нет в API */}
               <div className="small">Цена: {c.price}</div>
             </div>
             <button
@@ -90,11 +106,20 @@ export default function Chests({ user, apiRoot, onBalanceChange }) {
 
       {msg && <div style={{ marginTop: 10 }} className="error">{msg}</div>}
 
-      {/* Анимация прокрутки (без изменений) */}
+      {/* ✨ Дополнение: Вставляем JSX для анимации прокрутки */}
       {animationState.id && (
         <div className="reward-animation">
           <div className="spinner-container">
-            {/* ... */}
+            {animationState.spinning && (
+              <div className="spinner-reel">
+                {[...Array(10)].map((_, i) => <div key={i}>{Math.floor(Math.random() * 900) + 100}</div>)}
+              </div>
+            )}
+            {animationState.reward !== null && (
+              <div className="spinner-final-reward">
+                {animationState.reward}
+              </div>
+            )}
           </div>
         </div>
       )}
