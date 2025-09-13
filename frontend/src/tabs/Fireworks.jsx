@@ -86,3 +86,37 @@ const Fireworks = () => {
       size: {
         value: { min: 2, max: 4 },
       },
+      life: {
+        count: 1,
+        duration: {
+          value: {
+            min: 0.25,
+            max: 0.5,
+          },
+        },
+      },
+      move: {
+        enable: true,
+        gravity: {
+          enable: true,
+          acceleration: 20,
+        },
+        speed: { min: 5, max: 15 },
+        decay: 0.1,
+        direction: "none",
+        straight: false,
+        outModes: {
+          default: "destroy",
+          top: "none",
+        },
+      },
+    },
+    sounds: {
+      enable: false,
+    }
+  };
+
+  return <Particles id="tsparticles" init={particlesInit} options={options} />;
+};
+
+export default Fireworks;
