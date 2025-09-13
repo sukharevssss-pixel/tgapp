@@ -1,86 +1,105 @@
-﻿# backend/app/bot.py (Исправленная версия)
+﻿# backend/app/bot.py (полностью переработанная версия)
 
 import os
 import asyncio
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties # ✨ ДОБАВЛЕН НОВЫЙ ИМПОРТ
+from aiogram.client.default import DefaultBotProperties
+from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
-from aiogram.utils.markdown import hbold
+from aiogram.utils.markdown import hbold, hitalic, hcode
 from dotenv import load_dotenv
-
 import db
 
-# --- Конфигурация через переменные окружения ---
+# --- Конфигурация ---
 load_dotenv()
-
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
-CHAT_ID_STR = os.environ.get("CHAT_ID")
+CHAT_ID = int(os.environ.get("CHAT_ID"))
+# Замените на ID тех, кто может управлять ботом
+ADMIN_IDS = [359469476] 
 
-if not BOT_TOKEN or not CHAT_ID_STR:
-    raise ValueError("BOT_TOKEN и CHAT_ID должны быть установлены в переменных окружения")
-
-CHAT_ID = int(CHAT_ID_STR)
-
-# --- ✨ ИЗМЕНЕНИЕ: Инициализация Бота по-новому ---
+# --- Инициализация ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-
-# --- Функция для отправки уведомления о новом опросе ---
-async def send_new_poll_notification(poll_id: int):
-    """Отправляет сообщение с кнопками для ставок в чат."""
+# --- ФОРМАТИРОВАНИЕ СООБЩЕНИЙ ---
+def format_poll_text(poll_id: int) -> str:
+    """Формирует текст для сообщения с опросом."""
     poll = db.get_poll(poll_id)
-    if not poll:
-        return
+    if not poll: return "Опрос не найден."
 
-    text = f"📊 Новый опрос!\n\n"
-    text += f"{hbold(poll['question'])}\n\n"
-    text += f"💰 Мин. ставка: {poll.get('min_bet_amount', 'N/A')} монет"
-
-    buttons = []
-    for option in poll['options']:
-        callback_data = f"bet:{poll['id']}:{option['id']}"
-        buttons.append([
-            InlineKeyboardButton(text=option['option_text'], callback_data=callback_data)
-        ])
+    status = "🔴 СТАВКИ ЗАКРЫТЫ" if not poll['is_open'] else "🟢 СТАВКИ ПРИНИМАЮТСЯ"
     
-    keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
+    text = f"📊 <b>Опрос #{poll['id']}</b> | {status}\n\n"
+    text += f"<b>{poll['question']}</b>\n\n"
     
-    await bot.send_message(chat_id=CHAT_ID, text=text, reply_markup=keyboard)
+    total_pool = sum(opt['total_bet'] for opt in poll['options'])
+    text += f"💰 Общий банк: {total_pool} монет\n"
+    text += f"💵 Мин. ставка: {poll['min_bet_amount']}\n\n"
+    text += "<b>Варианты и ставки:</b>\n"
 
+    bets = db.get_bets_for_poll(poll_id) # (нужно будет добавить эту функцию в db.py)
+    
+    for opt in poll['options']:
+        text += f"  - {opt['option_text']} ({opt['total_bet']} монет)\n"
+        # Показываем, кто поставил на этот вариант
+        bettors = [b for b in bets if b['option_id'] == opt['id']]
+        if bettors:
+            for bettor in bettors:
+                text += f"      <i>└ {bettor['username']}: {bettor['amount']} монет</i>\n"
+    
+    closes_at_str = datetime.fromisoformat(poll['closes_at']).strftime('%H:%M')
+    text += f"\n<i>Ставки закроются в {closes_at_str}</i>"
+    return text
 
-# --- Обработчик нажатий на кнопки ставок ---
-@dp.callback_query(lambda c: c.data and c.data.startswith('bet:'))
-async def process_bet_callback(query: CallbackQuery):
-    """Ловит нажатия на кнопки со ставками."""
-    try:
-        action, poll_id_str, option_id_str = query.data.split(':')
-        poll_id = int(poll_id_str)
-        option_id = int(option_id_str)
-        telegram_id = query.from_user.id
-        
-        poll = db.get_poll(poll_id)
-        if not poll:
-            await query.answer("❌ Ошибка: Опрос не найден.", show_alert=True)
-            return
-            
-        min_bet = poll.get('min_bet_amount', 1)
+# --- КОМАНДЫ БОТА ---
+@dp.message(Command("bet"))
+async def create_poll_command(message: types.Message):
+    # ... (логика создания опроса, как в предыдущем ответе) ...
 
-        result = db.place_bet(telegram_id, poll_id, option_id, amount=min_bet)
+@dp.message(Command("p"))
+async def place_bet_command(message: types.Message):
+    # ... (логика размещения ставки) ...
 
-        if result.get("ok"):
-            user = db.get_user(telegram_id)
-            await query.answer(f"✅ Ставка в {min_bet} монет принята! Ваш баланс: {user['balance']} монет.", show_alert=True)
-        else:
-            await query.answer(f"❌ Ошибка: {result.get('error')}", show_alert=True)
+@dp.message(Command("close"))
+async def close_poll_command(message: types.Message):
+    # ... (логика закрытия опроса) ...
 
-    except Exception as e:
-        print(f"Error in callback: {e}")
-        await query.answer("Произошла ошибка при обработке ставки.", show_alert=True)
+@dp.message(Command("winrate"))
+async def winrate_command(message: types.Message):
+    # ... (логика показа винрейта) ...
 
+# --- ФОНОВЫЕ ЗАДАЧИ ---
+async def scheduler():
+    """Каждую минуту проверяет, не пора ли закрыть какие-то опросы."""
+    while True:
+        await asyncio.sleep(60)
+        polls_to_close = db.auto_close_due_polls()
+        for poll in polls_to_close:
+            try:
+                new_text = format_poll_text(poll['id'])
+                await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+            except Exception as e:
+                print(f"Не удалось обновить сообщение для опроса #{poll['id']}: {e}")
 
-# --- Функция для запуска бота ---
+# --- ЗАПУСК ---
 async def start_bot():
-    """Запускает long polling для бота."""
+    # Запускаем планировщик в фоновом режиме
+    asyncio.create_task(scheduler())
+    # Запускаем long polling для бота
     await dp.start_polling(bot)
+
+# Дополните db.py функцией get_bets_for_poll
+def get_bets_for_poll(poll_id: int) -> List[Dict[str, Any]]:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("""
+        SELECT b.option_id, b.amount, u.username 
+        FROM bets b 
+        JOIN users u ON u.telegram_id = b.telegram_id 
+        WHERE b.poll_id = ?
+    """, (poll_id,))
+    bets = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return bets

@@ -1,106 +1,87 @@
+// frontend/src/tabs/Polls.jsx (Новая, упрощенная версия)
+
 import React, { useEffect, useState } from "react";
 
 export default function Polls({ user, apiRoot }) {
   const [polls, setPolls] = useState([]);
-  const [question, setQuestion] = useState("");
-  const [optionsText, setOptionsText] = useState("");
-  
-  // ✨ Переименовываем состояние для ясности
-  const [minBetAmount, setMinBetAmount] = useState(100);
-  
-  // ✨ Новое состояние для хранения сумм ставок пользователя для каждого опроса
+  // Состояние для хранения сумм ставок пользователя для каждого опроса
   const [betAmounts, setBetAmounts] = useState({});
-
-  const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const fetchPolls = async () => { /* ... без изменений ... */ };
-  useEffect(() => { fetchPolls(); }, []);
+  const fetchPolls = async () => {
+    try {
+      const res = await fetch(`${apiRoot}/api/polls`);
+      const data = await res.json();
+      setPolls(data || []);
+    } catch (e) {
+      console.error(e);
+      setError("Не удалось загрузить опросы");
+    }
+  };
 
+  useEffect(() => {
+    fetchPolls();
+  }, []);
+
+  // Функция для отслеживания изменения суммы ставки в поле ввода
   const handleBetAmountChange = (pollId, value) => {
-    setBetAmounts(prev => ({
-      ...prev,
-      [pollId]: Number(value)
-    }));
+    setBetAmounts(prev => ({ ...prev, [pollId]: value }));
   };
 
-  const createPoll = async () => {
-    // ...
-    // ✨ Используем новое имя переменной
-    const res = await fetch(`${apiRoot}/api/polls`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            telegram_id: user.telegram_id,
-            question,
-            options: opts,
-            min_bet_amount: Number(minBetAmount) // Отправляем min_bet_amount
-        })
-    });
-    // ...
-  };
-
-  // ✨ Функция теперь принимает amount
-  const placeBet = async (poll_id, option_id, amount) => {
+  // Функция для размещения ставки
+  const placeBet = async (poll_id, option_id) => {
     setError("");
     const poll = polls.find(p => p.id === poll_id);
     if (!poll) return;
+
+    // Берем сумму из состояния или используем минимальную ставку по умолчанию
+    const amount = Number(betAmounts[poll_id] || poll.min_bet_amount);
 
     if (amount < poll.min_bet_amount) {
       setError(`Ставка не может быть меньше ${poll.min_bet_amount}`);
       return;
     }
-    // ...
-    const res = await fetch(`${apiRoot}/api/bet`, {
+
+    try {
+      const res = await fetch(`${apiRoot}/api/bet`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-            telegram_id: user.telegram_id,
-            poll_id,
-            option_id,
-            amount // Отправляем сумму ставки
+          telegram_id: user.telegram_id,
+          poll_id,
+          option_id,
+          amount
         })
-    });
-    // ...
+      });
+      if (!res.ok) {
+        const jd = await res.json();
+        throw new Error(jd.detail || "Ошибка ставки");
+      }
+      // Обновляем список опросов, чтобы увидеть новую общую сумму
+      fetchPolls();
+    } catch (e) {
+      setError(e.message);
+    }
   };
-
-  const closePoll = async (poll_id, winning_option_id) => { /* ... без изменений ... */ };
 
   return (
     <div>
-      <h2>Создать опрос</h2>
-      <div className="form-row">
-        <input className="input" placeholder="Вопрос" value={question} onChange={e => setQuestion(e.target.value)} />
-        {/* ✨ Изменяем поле для ввода минимальной ставки */}
-        <input
-          type="number"
-          className="input"
-          style={{ maxWidth: 140 }}
-          value={minBetAmount}
-          onChange={e => setMinBetAmount(e.target.value)}
-        />
-      </div>
-      {/* ... остальная форма без изменений ... */}
-      <div className="small">Минимальная ставка: {minBetAmount} монет</div>
-
-      <hr style={{ margin: "20px 0" }} />
-
       <h2>Активные опросы</h2>
+      {error && <div className="error">{error}</div>}
+      {polls.length === 0 && <div className="small">Открытых опросов пока нет.</div>}
+      
       {polls.map(p => {
-        // Определяем текущую сумму ставки для этого опроса
         const currentBetAmount = betAmounts[p.id] || p.min_bet_amount;
         return (
           <div key={p.id} className="poll">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <div><strong>{p.question}</strong></div>
-              {/* ✨ Отображаем минимальную ставку */}
+              <strong>{p.question}</strong>
               <div className="small">Мин. ставка: {p.min_bet_amount}</div>
             </div>
             <div style={{ marginTop: 8 }}>
               {p.options && p.options.map(opt => (
                 <div key={opt.id} className="option">
                   <div>{opt.option_text} <span className="small">({opt.total_bet} монет)</span></div>
-                  {/* ✨ ИЗМЕНЕНИЕ: Теперь здесь форма для ставки, а не просто кнопка */}
                   <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
                     <input
                       type="number"
@@ -108,14 +89,10 @@ export default function Polls({ user, apiRoot }) {
                       style={{ maxWidth: '80px', textAlign: 'right' }}
                       value={currentBetAmount}
                       onChange={(e) => handleBetAmountChange(p.id, e.target.value)}
-                      placeholder={`>${p.min_bet_amount}`}
                     />
-                    <button className="btn" onClick={() => placeBet(p.id, opt.id, currentBetAmount)}>
+                    <button className="btn" onClick={() => placeBet(p.id, opt.id)}>
                       Поставить
                     </button>
-                    {user && user.telegram_id === p.creator_id && (
-                      <button className="btn-admin" onClick={() => closePoll(p.id, opt.id)}>👑</button>
-                    )}
                   </div>
                 </div>
               ))}
