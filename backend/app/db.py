@@ -16,6 +16,14 @@ def get_conn():
 
 
 def init_db():
+ --- ✨ НОВЫЙ БЛОК КОДА ---
+    # Проверяем, есть ли переменная окружения, которая приказывает пересоздать БД
+    if os.environ.get("RECREATE_DB_ON_STARTUP") == "true":
+        if os.path.exists(DB_PATH):
+            os.remove(DB_PATH)
+            print("✅ Старая база данных удалена для принудительного пересоздания.")
+    # --- КОНЕЦ НОВОГО БЛОКА ---
+
     conn = get_conn()
     cur = conn.cursor()
 
