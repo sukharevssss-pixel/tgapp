@@ -1,99 +1,52 @@
-// src/tabs/Fireworks.jsx (Исправленная версия)
+// src/tabs/Fireworks.jsx (Новая, упрощенная версия с конфетти)
 
-import React, { useCallback } from "react";
-import Particles from "react-tsparticles";
+import React, { useEffect, useState } from "react";
+import Particles, { initParticlesEngine } from "@tsparticles/react";
 import { loadSlim } from "tsparticles-slim";
 
 const Fireworks = () => {
-  const particlesInit = useCallback(async (engine) => {
-    // Инициализируем движок tsparticles
-    await loadSlim(engine);
+  const [init, setInit] = useState(false);
+
+  useEffect(() => {
+    initParticlesEngine(async (engine) => {
+      await loadSlim(engine);
+    }).then(() => {
+      setInit(true);
+    });
   }, []);
 
-  // Конфигурация для эффекта салюта
   const options = {
-    autoPlay: true,
     fullScreen: {
-      enable: true,
-      zIndex: 9999, // Поверх всех остальных элементов
+      zIndex: 9999,
     },
-    
-    // --- ИЗМЕНЕНИЕ №1: Явно делаем фон прозрачным ---
-    background: {
-      color: {
-        value: "transparent",
-      },
-    },
-
-    // --- ИЗМЕНЕНИЕ №2: Отключаем реакцию на клики, чтобы слой не мешал ---
-    interactivity: {
-      events: {
-        onClick: {
-          enable: false,
-        },
-        onHover: {
-          enable: false,
-        },
-        resize: true,
-      },
-    },
-
-    detectRetina: true,
-    duration: 0.4, // Длительность вспышек в секундах
-    fpsLimit: 120,
-    emitters: [
-      {
-        direction: "top",
-        life: {
-          count: 0,
-          duration: 0.1,
-          delay: 0.1,
-        },
-        position: {
-          x: 50,
-          y: 100,
-        },
-        rate: {
-          delay: 0.15,
-          quantity: 1,
-        },
-        size: {
-          width: 100,
-          height: 0,
-        },
-      },
-    ],
     particles: {
       number: {
         value: 0,
       },
       color: {
-        value: ["#3b82f6", "#f0ad4e", "#16a34a", "#dc2626"], // Цвета салюта
+        value: ["#3b82f6", "#f0ad4e", "#16a34a", "#dc2626", "#ffffff"],
       },
       shape: {
-        type: "circle",
+        type: ["circle", "square", "triangle"],
       },
       opacity: {
-        value: { min: 0.1, max: 1 },
+        value: { min: 0, max: 1 },
         animation: {
           enable: true,
-          speed: 0.7,
-          sync: false,
+          speed: 1,
           startValue: "max",
           destroy: "min",
         },
       },
       size: {
-        value: { min: 2, max: 4 },
+        value: { min: 3, max: 7 },
       },
       life: {
-        count: 1,
         duration: {
-          value: {
-            min: 0.25,
-            max: 0.5,
-          },
+          sync: true,
+          value: 5,
         },
+        count: 1,
       },
       move: {
         enable: true,
@@ -101,7 +54,7 @@ const Fireworks = () => {
           enable: true,
           acceleration: 20,
         },
-        speed: { min: 5, max: 15 },
+        speed: { min: 10, max: 30 },
         decay: 0.1,
         direction: "none",
         straight: false,
@@ -111,12 +64,47 @@ const Fireworks = () => {
         },
       },
     },
-    sounds: {
-      enable: false,
-    }
+    // Эмиттеры создают "взрывы" конфетти в случайных местах
+    emitters: {
+      direction: "none",
+      rate: {
+        quantity: 5,
+        delay: 0.3,
+      },
+      position: {
+        x: 50,
+        y: 50,
+      },
+      spawnColor: {
+        animation: {
+          h: {
+            enable: true,
+            offset: {
+              min: -1.4,
+              max: 1.4,
+            },
+            speed: 0.1,
+            sync: false,
+          },
+          l: {
+            enable: true,
+            offset: {
+              min: 20,
+              max: 80,
+            },
+            speed: 0,
+            sync: false,
+          },
+        },
+      },
+    },
   };
 
-  return <Particles id="tsparticles" init={particlesInit} options={options} />;
+  if (init) {
+    return <Particles id="tsparticles" options={options} />;
+  }
+
+  return <></>;
 };
 
 export default Fireworks;
