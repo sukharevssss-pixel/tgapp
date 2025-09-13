@@ -6,3 +6,4 @@ node_modules/
 dist/
 .env
 backend/tg_miniapp.db
+backend/.env
