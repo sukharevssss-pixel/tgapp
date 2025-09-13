@@ -158,4 +158,71 @@ h1, h2 {
   border: 1px solid var(--border-color);
   padding: 12px;
   margin-bottom: 12px;
-  border-radius: var(--border-radius
+  border-radius: var(--border-radius); /* <-- ИСПРАВЛЕНО */
+  transition: box-shadow 0.2s;
+}
+
+.poll:hover {
+  box-shadow: var(--shadow-sm);
+}
+
+.option {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px;
+  border-radius: 6px;
+  background: #fafafa;
+  margin-bottom: 6px;
+}
+
+/* --- ✨ ДОБАВЛЕНО: Стили для анимации сундуков --- */
+
+.reward-animation {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px;
+  background-color: #f0f2f5;
+  border-radius: var(--border-radius);
+  margin-top: 10px;
+  border: 1px solid var(--border-color);
+}
+
+.spinner-container {
+  height: 50px;
+  width: 120px;
+  overflow: hidden;
+  border: 2px solid var(--border-color);
+  background: var(--white-color);
+  border-radius: 6px;
+  position: relative;
+  font-size: 32px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 50px;
+}
+
+.spinner-final-reward {
+  color: var(--accent-color);
+  animation: fadeIn 0.3s ease-in;
+}
+
+.spinner-reel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  animation: scrollNumbers 0.5s linear infinite;
+}
+
+@keyframes scrollNumbers {
+  0% { transform: translateY(0); }
+  100% { transform: translateY(-100%); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: scale(0.8); }
+  to { opacity: 1; transform: scale(1); }
+}
