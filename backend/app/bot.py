@@ -11,21 +11,21 @@ from dotenv import load_dotenv
 
 import db
 
-# --- Configuration ---
+# --- Конфигурация ---
 load_dotenv()
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID = int(os.environ.get("CHAT_ID"))
-# IMPORTANT: Replace with your actual Telegram User ID(s)
+# ВАЖНО: Замените на ID вашего Telegram-аккаунта
 ADMIN_IDS = [359469476] 
 
 if not BOT_TOKEN or not CHAT_ID:
-    raise ValueError("BOT_TOKEN and CHAT_ID must be set")
+    raise ValueError("BOT_TOKEN и CHAT_ID должны быть установлены")
 
-# --- Initialization ---
+# --- Инициализация ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
-# --- MESSAGE FORMATTING ---
+# --- ФОРМАТИРОВАНИЕ СООБЩЕНИЙ ---
 def format_poll_text(poll_id: int) -> str:
     poll = db.get_poll(poll_id)
     if not poll:
@@ -54,7 +54,7 @@ def format_poll_text(poll_id: int) -> str:
     text += f"\n<i>Ставки закроются в {closes_at_str}</i>"
     return text
 
-# --- BOT COMMANDS ---
+# --- КОМАНДЫ БОТА ---
 @dp.message(Command("bet"))
 async def create_poll_command(message: Message):
     if message.from_user.id not in ADMIN_IDS:
@@ -124,8 +124,9 @@ async def place_bet_command(message: Message):
         if result.get("ok"):
             await message.reply("✅ Ваша ставка принята!")
             # Update the original poll message
-            new_text = format_poll_text(poll_id)
-            await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+            if poll.get('message_id'):
+                new_text = format_poll_text(poll_id)
+                await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
         else:
             await message.reply(f"❌ {result.get('error')}")
 
@@ -165,9 +166,8 @@ async def close_poll_command(message: Message):
         
         await bot.send_message(CHAT_ID, response_text)
         
-        # Update original message to show "CLOSED"
         poll = db.get_poll(poll_id)
-        if poll and poll['message_id']:
+        if poll and poll.get('message_id'):
             final_text = format_poll_text(poll_id)
             await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'])
 
@@ -182,24 +182,30 @@ async def close_poll_command(message: Message):
 async def winrate_command(message: Message):
     rating = db.get_rating(limit=10)
     text = "🏆 <b>Топ-10 игроков по проценту побед:</b>\n\n"
-    for i, user in enumerate(rating, 1):
-        text += f"{i}. <b>{user['username']}</b> - {user['winrate']}% ({user['wins']} W / {user['losses']} L)\n"
+    if not rating:
+        text += "Пока нет данных для рейтинга."
+    else:
+        for i, user in enumerate(rating, 1):
+            text += f"{i}. <b>{user['username']}</b> - {user['winrate']}% ({user['wins']} W / {user['losses']} L)\n"
     await message.answer(text)
 
-# --- BACKGROUND TASKS ---
+# --- ФОНОВЫЕ ЗАДАЧИ ---
 async def scheduler():
     while True:
         await asyncio.sleep(60)
-        polls_to_close = db.auto_close_due_polls()
-        for poll in polls_to_close:
-            try:
-                new_text = format_poll_text(poll['id'])
-                if poll['message_id']:
-                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
-            except Exception as e:
-                print(f"Failed to auto-update poll message #{poll['id']}: {e}")
+        try:
+            polls_to_close = db.auto_close_due_polls()
+            for poll in polls_to_close:
+                try:
+                    new_text = format_poll_text(poll['id'])
+                    if poll.get('message_id'):
+                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+                except Exception as e:
+                    print(f"Failed to auto-update poll message #{poll['id']}: {e}")
+        except Exception as e:
+            print(f"Error in scheduler: {e}")
 
-# --- STARTUP ---
+# --- ЗАПУСК ---
 async def start_bot():
     asyncio.create_task(scheduler())
     await dp.start_polling(bot)
