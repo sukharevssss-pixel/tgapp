@@ -22,36 +22,25 @@ class InitPayload(BaseModel):
     telegram_id: int
     username: str | None = None
 
-class CreatePollPayload(BaseModel):
-    telegram_id: int
-    question: str
-    options: list[str]
-    min_bet_amount: int
-
 class PlaceBetPayload(BaseModel):
     telegram_id: int
     poll_id: int
     option_id: int
     amount: int
 
-class ClosePollPayload(BaseModel):
-    telegram_id: int
-    poll_id: int
-    winning_option_id: int
-
 class OpenChestPayload(BaseModel):
     telegram_id: int
     chest_id: int
 
+# --- СХЕМЫ CreatePollPayload и ClosePollPayload УДАЛЕНЫ, ТАК КАК ОНИ БОЛЬШЕ НЕ НУЖНЫ ---
 
 # --- Startup ---
 @app.on_event("startup")
 def startup():
     print("🚀 Startup: инициализация базы данных")
     db.init_db()
-    # Запускаем бота в фоновом режиме
     asyncio.create_task(bot.start_bot())
-    print("🤖 Bot started polling...")
+    print("🤖 Бот и планировщик запущены...")
 
 
 # --- Пользователи ---
@@ -67,7 +56,6 @@ async def api_auth(payload: InitPayload):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
-
 @app.get("/api/me/{telegram_id}")
 async def api_me(telegram_id: int):
     user = db.get_user(telegram_id)
@@ -76,31 +64,13 @@ async def api_me(telegram_id: int):
     return user
 
 
-# --- Опросы ---
-@app.post("/api/polls")
-async def api_create_poll(payload: CreatePollPayload):
-    try:
-        if len(payload.options) < 2:
-            raise HTTPException(status_code=400, detail="Need at least 2 options")
-        
-        poll_id = db.create_poll(
-            payload.telegram_id, payload.question, payload.options, payload.min_bet_amount
-        )
-        print(f"✅ Poll created, id: {poll_id}")
-        
-        # Отправляем уведомление в чат
-        await bot.send_new_poll_notification(poll_id)
-        
-        return {"ok": True, "poll_id": poll_id}
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
+# --- Опросы (только для чтения и ставок из Mini App) ---
 
+# --- ЭНДПОИНТ POST /api/polls УДАЛЕН, ТАК КАК ОПРОСЫ СОЗДАЮТСЯ ЧЕРЕЗ БОТА ---
 
 @app.get("/api/polls")
 async def api_list_polls():
     return db.list_polls(open_only=True)
-
 
 @app.get("/api/polls/{poll_id}")
 async def api_get_poll(poll_id: int):
@@ -108,7 +78,6 @@ async def api_get_poll(poll_id: int):
     if not poll:
         raise HTTPException(status_code=404, detail="Poll not found")
     return poll
-
 
 @app.post("/api/bet")
 async def api_place_bet(payload: PlaceBetPayload):
@@ -121,24 +90,12 @@ async def api_place_bet(payload: PlaceBetPayload):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
 
-
-@app.post("/api/polls/close")
-async def api_close_poll(payload: ClosePollPayload):
-    try:
-        res = db.close_poll(payload.telegram_id, payload.poll_id, payload.winning_option_id)
-        if not res.get("ok"):
-            raise HTTPException(status_code=400, detail=res.get("error"))
-        return res
-    except Exception as e:
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Internal error: {str(e)}")
-
+# --- ЭНДПОИНТ POST /api/polls/close УДАЛЕН, ТАК КАК ОПРОСЫ ЗАКРЫВАЮТСЯ ЧЕРЕЗ БОТА ---
 
 # --- Сундуки ---
 @app.get("/api/chests")
 async def api_chests():
     return db.list_chests()
-
 
 @app.post("/api/chests/open")
 async def api_open_chest(payload: OpenChestPayload):
