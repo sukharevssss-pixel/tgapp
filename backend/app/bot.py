@@ -6,7 +6,7 @@ from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.types import Message
-from aiogram.utils.markdown import hbold, hcode
+from aiogram.utils.markdown import hbold
 from dotenv import load_dotenv
 
 import db
@@ -53,6 +53,17 @@ def format_poll_text(poll_id: int) -> str | None:
     return text
 
 # --- КОМАНДЫ БОТА ---
+
+# ✨ ОБРАБОТЧИК ДЛЯ ОТЛАДКИ (ДОЛЖЕН БЫТЬ ПЕРВЫМ) ✨
+@dp.message()
+async def any_message_logger(message: types.Message):
+    """
+    Этот хендлер будет ловить ВСЕ сообщения.
+    Нужен для отладки, чтобы понять, видит ли бот сообщения в принципе.
+    """
+    print(f"!!! LOG: Получено сообщение от @{message.from_user.username} (ID: {message.from_user.id}) в чате {message.chat.id}: '{message.text}'")
+    # После решения проблемы этот обработчик нужно будет удалить или закомментировать
+
 @dp.message(Command("bet"))
 async def create_poll_command(message: Message):
     if message.from_user.id not in ADMIN_IDS:
@@ -79,7 +90,7 @@ async def place_bet_command(message: Message):
         args = message.text.split()
         if len(args) < 4: raise ValueError("Invalid format")
         poll_id, amount, option_text = int(args[1]), int(args[-1]), " ".join(args[2:-1])
-        db.ensure_user(message.from_user.id, message.from_user.username)
+        db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
         poll = db.get_poll(poll_id)
         if not poll: return await message.reply("❌ Опрос с таким ID не найден.")
         target_option = next((opt for opt in poll['options'] if opt['option_text'].lower() == option_text.lower()), None)
@@ -89,7 +100,8 @@ async def place_bet_command(message: Message):
             await message.reply("✅ Ваша ставка принята!")
             if poll.get('message_id'):
                 new_text = format_poll_text(poll_id)
-                await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+                if new_text:
+                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
         else:
             await message.reply(f"❌ {result.get('error')}")
     except (ValueError, IndexError):
@@ -119,7 +131,8 @@ async def close_poll_command(message: Message):
         poll = db.get_poll(poll_id)
         if poll and poll.get('message_id'):
             final_text = format_poll_text(poll_id)
-            await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'])
+            if final_text:
+                await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'])
     except (ValueError, IndexError):
         await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/close ID Текст_победителя</code>\n<b>Пример:</b> <code>/close 1 Команда А</code>")
     except Exception as e:
@@ -145,7 +158,7 @@ async def scheduler():
             for poll in polls_to_close:
                 try:
                     new_text = format_poll_text(poll['id'])
-                    if poll.get('message_id'):
+                    if poll.get('message_id') and new_text:
                         await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
                 except Exception as e:
                     print(f"Не удалось обновить сообщение для опроса #{poll['id']}: {e}")
