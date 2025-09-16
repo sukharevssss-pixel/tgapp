@@ -48,26 +48,21 @@ def format_poll_text(poll_id: int) -> str | None:
         if bettors:
             for bettor in bettors:
                 text += f"      <i>└ {bettor['username']}: {bettor['amount']} монет</i>\n"
-    
-    # Убедимся, что closes_at не None перед форматированием
     if poll.get('closes_at'):
         closes_at_str = datetime.fromisoformat(poll['closes_at']).strftime('%H:%M')
         text += f"\n<i>Ставки закроются в {closes_at_str}</i>"
-    
     return text
 
 # --- КОМАНДЫ БОТА ---
 @dp.message(Command("bet"))
 async def create_poll_command(message: Message):
-    # Теперь любой может создавать опрос
+    # Любой может создавать опрос
     try:
         lines = message.text.strip().split('\n')
         if len(lines) < 4: raise ValueError("Invalid format")
         question, min_bet_amount, options = lines[1], int(lines[-1]), lines[2:-1]
         if len(options) < 2: raise ValueError("Minimum 2 options required.")
-        
         db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
-        
         poll_id = db.create_poll(message.from_user.id, question, options, min_bet_amount)
         text = format_poll_text(poll_id)
         if text:
@@ -81,7 +76,6 @@ async def create_poll_command(message: Message):
 
 @dp.message(Command("p"))
 async def place_bet_command(message: Message):
-    # Любой может делать ставку
     try:
         args = message.text.split()
         if len(args) < 4: raise ValueError("Invalid format")
@@ -107,14 +101,11 @@ async def place_bet_command(message: Message):
 
 @dp.message(Command("close"))
 async def close_poll_command(message: Message):
-    # Только создатель опроса может его закрыть
     try:
         args = message.text.split(maxsplit=2)
         if len(args) < 3: raise ValueError("Invalid format")
         poll_id, winning_option_text = int(args[1]), args[2]
-        
         result = db.close_poll(message.from_user.id, poll_id, winning_option_text)
-        
         if not result.get("ok"): raise ValueError(result.get("error"))
         winners = result.get('winners', [])
         response_text = f"🎉 <b>Опрос #{poll_id} завершен!</b>\n🏆 Победил вариант: <b>{result['winning_option_text']}</b>\n\n"
@@ -146,10 +137,8 @@ async def winrate_command(message: Message):
             text += f"{i}. <b>{user['username']}</b> - {user['winrate']}% ({user['wins']} W / {user['losses']} L)\n"
     await message.answer(text)
 
-
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 async def scheduler():
-    print("--- Планировщик запущен ---")
     while True:
         await asyncio.sleep(60)
         try:
@@ -164,7 +153,6 @@ async def scheduler():
         except Exception as e:
             print(f"Ошибка в планировщике: {e}")
 
-
 # --- ЗАПУСК БОТА С ОТЛАДКОЙ ---
 async def start_bot():
     try:
@@ -173,11 +161,10 @@ async def start_bot():
     except Exception as e:
         print(f"!!! КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к Telegram. Проверьте BOT_TOKEN. Ошибка: {e}")
         return
-
     print("--- Запуск планировщика и опроса Telegram ---")
     asyncio.create_task(scheduler())
     try:
-        await dp.start_polling(bot, skip_updates=True) # skip_updates чтобы пропустить старые сообщения
+        await dp.start_polling(bot, skip_updates=True)
     except Exception as e:
         print(f"!!! КРИТИЧЕСКАЯ ОШИБКА: Бот упал во время работы с ошибкой: {e}")
     finally:
