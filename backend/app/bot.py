@@ -1,15 +1,16 @@
 ﻿import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
-from aiogram.types import Message
+from aiogram.types import Message, FSInputFile
 from aiogram.utils.markdown import hbold
 from dotenv import load_dotenv
 
 import db
+from db import DB_PATH 
 
 # --- Конфигурация ---
 load_dotenv()
@@ -56,7 +57,6 @@ def format_poll_text(poll_id: int) -> str | None:
 # --- КОМАНДЫ БОТА ---
 @dp.message(Command("bet"))
 async def create_poll_command(message: Message):
-    # Любой может создавать опрос
     try:
         lines = message.text.strip().split('\n')
         if len(lines) < 4: raise ValueError("Invalid format")
@@ -138,9 +138,37 @@ async def winrate_command(message: Message):
     await message.answer(text)
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
+last_backup_time = None
+
 async def scheduler():
+    global last_backup_time
+    print("--- Планировщик запущен ---")
+    
     while True:
         await asyncio.sleep(60)
+        
+        # --- Логика создания бэкапов ---
+        should_backup = False
+        if last_backup_time is None:
+            should_backup = True
+        elif (datetime.now() - last_backup_time).total_seconds() > 86400: # 24 часа
+            should_backup = True
+        
+        if should_backup:
+            try:
+                print("--- Создание резервной копии базы данных... ---")
+                if os.path.exists(DB_PATH):
+                    backup_file = FSInputFile(DB_PATH)
+                    backup_caption = f"🗓️ Резервная копия базы данных\nот {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    await bot.send_document(chat_id=ADMIN_IDS[0], document=backup_file, caption=backup_caption)
+                    last_backup_time = datetime.now()
+                    print("✅ Резервная копия успешно отправлена.")
+                else:
+                    print("⚠️ Файл базы данных не найден для создания бэкапа.")
+            except Exception as e:
+                print(f"❌ Ошибка при создании бэкапа: {e}")
+        
+        # --- Логика автоматического закрытия опросов ---
         try:
             polls_to_close = db.auto_close_due_polls()
             for poll in polls_to_close:
@@ -151,9 +179,9 @@ async def scheduler():
                 except Exception as e:
                     print(f"Не удалось обновить сообщение для опроса #{poll['id']}: {e}")
         except Exception as e:
-            print(f"Ошибка в планировщике: {e}")
+            print(f"Ошибка в планировщике (закрытие опросов): {e}")
 
-# --- ЗАПУСК БОТА С ОТЛАДКОЙ ---
+# --- ЗАПУСК БОТА ---
 async def start_bot():
     try:
         me = await bot.get_me()
@@ -161,6 +189,7 @@ async def start_bot():
     except Exception as e:
         print(f"!!! КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к Telegram. Проверьте BOT_TOKEN. Ошибка: {e}")
         return
+
     print("--- Запуск планировщика и опроса Telegram ---")
     asyncio.create_task(scheduler())
     try:
