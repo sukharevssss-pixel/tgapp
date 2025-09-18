@@ -10,19 +10,13 @@ import bot
 # --- Lifespan для управления фоновыми задачами ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Этот код выполняется один раз при старте сервера
     print("🚀 Startup: инициализация базы данных")
     db.init_db()
-    # Запускаем бота и его планировщик в фоновом режиме
     bot_task = asyncio.create_task(bot.start_bot())
     print("🤖 Бот и планировщик запущены...")
-    
-    yield # Приложение работает здесь
-    
-    # Этот код выполняется при остановке сервера
+    yield
     print("🛑 Shutting down bot...")
     bot_task.cancel()
-
 
 app = FastAPI(title="TG MiniApp Backend", lifespan=lifespan)
 
@@ -50,7 +44,6 @@ class OpenChestPayload(BaseModel):
     telegram_id: int
     chest_id: int
 
-
 # --- Пользователи ---
 @app.post("/api/auth")
 async def api_auth(payload: InitPayload):
@@ -70,7 +63,6 @@ async def api_me(telegram_id: int):
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     return user
-
 
 # --- Опросы (только для чтения и ставок из Mini App) ---
 @app.get("/api/polls")
@@ -97,7 +89,6 @@ async def api_place_bet(payload: PlaceBetPayload):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # --- Сундуки ---
 @app.get("/api/chests")
 async def api_chests():
@@ -114,8 +105,13 @@ async def api_open_chest(payload: OpenChestPayload):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
-
 # --- Рейтинг ---
 @app.get("/api/rating")
 async def api_rating():
     return db.get_rating()
+
+# --- Эндпоинт для "само-пинга" ---
+@app.get("/health")
+async def health_check():
+    """Простой эндпоинт для проверки, что сервис жив."""
+    return {"status": "ok"}
