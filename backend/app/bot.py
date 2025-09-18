@@ -1,6 +1,7 @@
 ﻿import os
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -40,8 +41,7 @@ def format_poll_text(poll_id: int) -> str | None:
     text = f"📊 <b>Опрос #{poll['id']}</b> | {status}\n\n"
     text += f"<b>{poll['question']}</b>\n\n"
     total_pool = sum(opt['total_bet'] for opt in poll['options'])
-    text += f"💰 Общий банк: {total_pool} монет\n"
-    text += f"💵 Мин. ставка: {poll['min_bet_amount']}\n\n"
+    text += f"💰 Общий банк: {total_pool} монет\n\n"
     text += "<b>Варианты и ставки:</b>\n"
     bets = db.get_bets_for_poll(poll_id)
     for opt in poll['options']:
@@ -60,18 +60,17 @@ def format_poll_text(poll_id: int) -> str | None:
 async def create_poll_command(message: Message):
     try:
         lines = message.text.strip().split('\n')
-        if len(lines) < 4: raise ValueError("Invalid format")
-        question, min_bet_amount, options = lines[1], int(lines[-1]), lines[2:-1]
+        if len(lines) < 3: raise ValueError("Invalid format")
+        question, options = lines[1], lines[2:]
         if len(options) < 2: raise ValueError("Minimum 2 options required.")
         db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
-        poll_id = db.create_poll(message.from_user.id, question, options, min_bet_amount)
+        poll_id = db.create_poll(message.from_user.id, question, options)
         text = format_poll_text(poll_id)
         if text:
             sent_message = await bot.send_message(CHAT_ID, text)
             db.set_poll_message_id(poll_id, sent_message.message_id)
-            await message.reply("✅ Опрос успешно создан и отправлен в чат!")
     except (ValueError, IndexError):
-        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте многострочный формат:\n<code>/bet\nВопрос\nВариант 1\nВариант 2\n100</code>")
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте многострочный формат:\n<code>/bet\nВопрос\nВариант 1\nВариант 2</code>")
     except Exception as e:
         await message.reply(f"Произошла ошибка: {e}")
 
@@ -140,12 +139,11 @@ async def winrate_command(message: Message):
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
-
 async def scheduler():
     global last_backup_time
     print("--- Планировщик запущен ---")
     while True:
-        await asyncio.sleep(60)
+        await asyncio.sleep(60 * 10) # Выполняем каждые 10 минут
         if BACKEND_URL:
             try:
                 async with httpx.AsyncClient() as client:
@@ -161,12 +159,12 @@ async def scheduler():
                 print("--- Создание резервной копии базы данных... ---")
                 if os.path.exists(DB_PATH):
                     backup_file = FSInputFile(DB_PATH)
-                    backup_caption = f"🗓️ Резервная копия базы данных\nот {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     await bot.send_document(chat_id=ADMIN_IDS[0], document=backup_file, caption=backup_caption)
                     last_backup_time = datetime.now()
                     print("✅ Резервная копия успешно отправлена.")
                 else:
-                    print("⚠️ Файл базы данных не найден для создания бэкапа.")
+                    print("⚠️ Файл бд не найден для создания бэкапа.")
             except Exception as e:
                 print(f"❌ Ошибка при создании бэкапа: {e}")
         try:

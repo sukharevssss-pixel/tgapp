@@ -1,4 +1,3 @@
-# Полная и исправленная версия db.py
 import sqlite3
 from pathlib import Path
 import random
@@ -30,7 +29,15 @@ def init_db():
     CREATE TABLE IF NOT EXISTS users ( telegram_id INTEGER PRIMARY KEY, username TEXT, balance INTEGER DEFAULT 1000, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0 );
     """)
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS polls ( id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL, creator_id INTEGER NOT NULL, min_bet_amount INTEGER NOT NULL DEFAULT 1, is_open INTEGER DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, message_id INTEGER, closes_at TIMESTAMP );
+    CREATE TABLE IF NOT EXISTS polls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL,
+        creator_id INTEGER NOT NULL,
+        is_open INTEGER DEFAULT 1,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        message_id INTEGER,
+        closes_at TIMESTAMP
+    );
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS poll_options ( id INTEGER PRIMARY KEY AUTOINCREMENT, poll_id INTEGER NOT NULL, option_text TEXT NOT NULL, FOREIGN KEY(poll_id) REFERENCES polls(id) ON DELETE CASCADE );
@@ -79,11 +86,14 @@ def get_user(telegram_id: int) -> Dict[str, Any] | None:
     return dict(row) if row else None
 
 
-def create_poll(creator_id: int, question: str, options: List[str], min_bet_amount: int) -> int:
+def create_poll(creator_id: int, question: str, options: List[str]) -> int:
     conn = get_conn()
     cur = conn.cursor()
     closes_at = datetime.now() + timedelta(minutes=20)
-    cur.execute("INSERT INTO polls (question, creator_id, min_bet_amount, closes_at) VALUES (?, ?, ?, ?)", (question, creator_id, min_bet_amount, closes_at))
+    cur.execute(
+        "INSERT INTO polls (question, creator_id, closes_at) VALUES (?, ?, ?)",
+        (question, creator_id, closes_at),
+    )
     poll_id = cur.lastrowid
     for opt in options:
         cur.execute("INSERT INTO poll_options (poll_id, option_text) VALUES (?, ?)", (poll_id, opt))
@@ -128,7 +138,7 @@ def get_poll(poll_id: int) -> Dict[str, Any] | None:
     conn.close()
     return poll
 
-# --- ВОТ НЕДОСТАЮЩАЯ ФУНКЦИЯ ---
+
 def list_polls(open_only: bool = True) -> List[Dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
@@ -159,14 +169,13 @@ def place_bet(telegram_id: int, poll_id: int, option_id: int, amount: int) -> Di
     cur = conn.cursor()
     try:
         cur.execute("BEGIN IMMEDIATE")
-        cur.execute("SELECT min_bet_amount, is_open, closes_at FROM polls WHERE id = ?", (poll_id,))
+        cur.execute("SELECT is_open, closes_at FROM polls WHERE id = ?", (poll_id,))
         poll_row = cur.fetchone()
         if not poll_row: return {"ok": False, "error": "Опрос не найден"}
         if poll_row["is_open"] != 1 or datetime.fromisoformat(poll_row["closes_at"]) <= datetime.now():
             return {"ok": False, "error": "Ставки больше не принимаются"}
-        min_bet_amount = int(poll_row["min_bet_amount"])
-        if amount < min_bet_amount:
-            return {"ok": False, "error": f"Сумма ставки не может быть меньше {min_bet_amount}"}
+        if amount <= 0:
+            return {"ok": False, "error": "Сумма ставки должна быть больше нуля"}
         cur.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,))
         user_row = cur.fetchone()
         if not user_row: return {"ok": False, "error": "Пользователь не найден"}
