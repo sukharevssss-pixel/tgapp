@@ -18,7 +18,7 @@ load_dotenv()
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID_STR = os.environ.get("CHAT_ID")
 ADMIN_IDS_STR = os.environ.get("ADMIN_IDS")
-BACKEND_URL = os.environ.get("BACKEND_URL") # URL для само-пинга
+BACKEND_URL = os.environ.get("BACKEND_URL")
 
 if not all([BOT_TOKEN, CHAT_ID_STR, ADMIN_IDS_STR]):
     raise ValueError("BOT_TOKEN, CHAT_ID, и ADMIN_IDS должны быть установлены")
@@ -35,7 +35,6 @@ dp = Dispatcher()
 
 # --- ФОРМАТИРОВАНИЕ СООБЩЕНИЙ ---
 def format_poll_text(poll_id: int) -> str | None:
-    # ... (код этой функции без изменений)
     poll = db.get_poll(poll_id)
     if not poll: return None
     status = "🔴 СТАВКИ ЗАКРЫТЫ" if not poll['is_open'] else "🟢 СТАВКИ ПРИНИМАЮТСЯ"
@@ -60,19 +59,85 @@ def format_poll_text(poll_id: int) -> str | None:
 # --- КОМАНДЫ БОТА ---
 @dp.message(Command("bet"))
 async def create_poll_command(message: Message):
-    # ... (код этой функции без изменений)
-    
+    try:
+        lines = message.text.strip().split('\n')
+        if len(lines) < 4: raise ValueError("Invalid format")
+        question, min_bet_amount, options = lines[1], int(lines[-1]), lines[2:-1]
+        if len(options) < 2: raise ValueError("Minimum 2 options required.")
+        db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
+        poll_id = db.create_poll(message.from_user.id, question, options, min_bet_amount)
+        text = format_poll_text(poll_id)
+        if text:
+            sent_message = await bot.send_message(CHAT_ID, text)
+            db.set_poll_message_id(poll_id, sent_message.message_id)
+            await message.reply("✅ Опрос успешно создан и отправлен в чат!")
+    except (ValueError, IndexError):
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте многострочный формат:\n<code>/bet\nВопрос\nВариант 1\nВариант 2\n100</code>")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
+
 @dp.message(Command("p"))
 async def place_bet_command(message: Message):
-    # ... (код этой функции без изменений)
+    try:
+        args = message.text.split()
+        if len(args) < 4: raise ValueError("Invalid format")
+        poll_id, amount, option_text = int(args[1]), int(args[-1]), " ".join(args[2:-1])
+        db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
+        poll = db.get_poll(poll_id)
+        if not poll: return await message.reply("❌ Опрос с таким ID не найден.")
+        target_option = next((opt for opt in poll['options'] if opt['option_text'].lower() == option_text.lower()), None)
+        if not target_option: return await message.reply("❌ Вариант ответа не найден.")
+        result = db.place_bet(message.from_user.id, poll_id, target_option['id'], amount)
+        if result.get("ok"):
+            await message.reply("✅ Ваша ставка принята!")
+            if poll.get('message_id'):
+                new_text = format_poll_text(poll_id)
+                if new_text:
+                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+        else:
+            await message.reply(f"❌ {result.get('error')}")
+    except (ValueError, IndexError):
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/p ID Текст_варианта Сумма</code>\n<b>Пример:</b> <code>/p 1 Команда А 123</code>")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
 
 @dp.message(Command("close"))
 async def close_poll_command(message: Message):
-    # ... (код этой функции без изменений)
+    try:
+        args = message.text.split(maxsplit=2)
+        if len(args) < 3: raise ValueError("Invalid format")
+        poll_id, winning_option_text = int(args[1]), args[2]
+        result = db.close_poll(message.from_user.id, poll_id, winning_option_text)
+        if not result.get("ok"): raise ValueError(result.get("error"))
+        winners = result.get('winners', [])
+        response_text = f"🎉 <b>Опрос #{poll_id} завершен!</b>\n🏆 Победил вариант: <b>{result['winning_option_text']}</b>\n\n"
+        if not winners:
+            response_text += "Никто не угадал исход."
+        else:
+            response_text += "Поздравляем победителей:\n"
+            for winner in winners:
+                response_text += f" - <b>{winner['username']}</b> выигрывает <b>{winner['payout']}</b> монет!\n"
+        await bot.send_message(CHAT_ID, response_text)
+        poll = db.get_poll(poll_id)
+        if poll and poll.get('message_id'):
+            final_text = format_poll_text(poll_id)
+            if final_text:
+                await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'])
+    except (ValueError, IndexError):
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/close ID Текст_победителя</code>\n<b>Пример:</b> <code>/close 1 Команда А</code>")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
 
 @dp.message(Command("winrate"))
 async def winrate_command(message: Message):
-    # ... (код этой функции без изменений)
+    rating = db.get_rating(limit=10)
+    text = "🏆 <b>Топ-10 игроков по проценту побед:</b>\n\n"
+    if not rating:
+        text += "Пока нет данных для рейтинга."
+    else:
+        for i, user in enumerate(rating, 1):
+            text += f"{i}. <b>{user['username']}</b> - {user['winrate']}% ({user['wins']} W / {user['losses']} L)\n"
+    await message.answer(text)
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
@@ -80,11 +145,8 @@ last_backup_time = None
 async def scheduler():
     global last_backup_time
     print("--- Планировщик запущен ---")
-    
     while True:
-        await asyncio.sleep(60) # Проверка каждую минуту
-        
-        # --- Блок само-пинга для поддержания активности ---
+        await asyncio.sleep(60)
         if BACKEND_URL:
             try:
                 async with httpx.AsyncClient() as client:
@@ -92,14 +154,9 @@ async def scheduler():
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Пинг самого себя для поддержания активности прошел успешно.")
             except Exception as e:
                 print(f"Ошибка само-пинга: {e}")
-
-        # --- Блок создания бэкапов (раз в 24 часа) ---
         should_backup = False
-        if last_backup_time is None:
+        if last_backup_time is None or (datetime.now() - last_backup_time).total_seconds() > 86400:
             should_backup = True
-        elif (datetime.now() - last_backup_time).total_seconds() > 86400: # 24 часа
-            should_backup = True
-        
         if should_backup:
             try:
                 print("--- Создание резервной копии базы данных... ---")
@@ -113,8 +170,6 @@ async def scheduler():
                     print("⚠️ Файл базы данных не найден для создания бэкапа.")
             except Exception as e:
                 print(f"❌ Ошибка при создании бэкапа: {e}")
-        
-        # --- Блок автоматического закрытия опросов ---
         try:
             polls_to_close = db.auto_close_due_polls()
             for poll in polls_to_close:
@@ -135,7 +190,6 @@ async def start_bot():
     except Exception as e:
         print(f"!!! КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к Telegram. Проверьте BOT_TOKEN. Ошибка: {e}")
         return
-
     print("--- Запуск планировщика и опроса Telegram ---")
     asyncio.create_task(scheduler())
     try:
