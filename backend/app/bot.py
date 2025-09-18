@@ -1,7 +1,6 @@
 ﻿import os
 import asyncio
-from datetime import datetime, timedelta
-import httpx
+from datetime import datetime
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
