@@ -1,7 +1,7 @@
 ﻿import os
 import asyncio
 from datetime import datetime, timedelta
-import httpx
+import httpx  # ✨ ВОТ НЕДОСТАЮЩИЙ ИМПОРТ
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
@@ -143,7 +143,7 @@ async def scheduler():
     global last_backup_time
     print("--- Планировщик запущен ---")
     while True:
-        await asyncio.sleep(60 * 10) # Выполняем каждые 10 минут
+        await asyncio.sleep(60 * 10)
         if BACKEND_URL:
             try:
                 async with httpx.AsyncClient() as client:
