@@ -45,8 +45,7 @@ def format_poll_text(poll_id: int) -> str | None:
     text += "<b>Варианты и ставки:</b>\n"
     bets = db.get_bets_for_poll(poll_id)
     for opt in poll['options']:
-        # Добавляем подсказку про кнопки
-        text += f"  - {opt['option_text']} ({opt['total_bet']} монет) <i>(кнопки ниже)</i>\n"
+        text += f"  - {opt['option_text']} ({opt['total_bet']} монет)\n"
         bettors = [b for b in bets if b['option_id'] == opt['id']]
         if bettors:
             for bettor in bettors:
@@ -70,8 +69,9 @@ async def send_new_poll_notification(poll_id: int):
         button_row = []
         for amount in fixed_bets:
             callback_data = f"bet:{poll['id']}:{option['id']}:{amount}"
+            button_text = f"{option['option_text']} - {amount}"
             button_row.append(
-                InlineKeyboardButton(text=str(amount), callback_data=callback_data)
+                InlineKeyboardButton(text=button_text, callback_data=callback_data)
             )
         keyboard_rows.append(button_row)
         
@@ -116,7 +116,6 @@ async def create_poll_command(message: Message):
         if len(options) < 2: raise ValueError("Minimum 2 options required.")
         db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
         poll_id = db.create_poll(message.from_user.id, question, options)
-        # Теперь уведомление с кнопками отправляется отсюда
         await send_new_poll_notification(poll_id)
     except (ValueError, IndexError):
         await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте многострочный формат:\n<code>/bet\nВопрос\nВариант 1\nВариант 2</code>")
@@ -125,7 +124,6 @@ async def create_poll_command(message: Message):
 
 @dp.message(Command("p"))
 async def place_bet_command(message: Message):
-    # Эта команда остается как альтернативный способ ставки
     try:
         args = message.text.split()
         if len(args) < 4: raise ValueError("Invalid format")
@@ -168,7 +166,6 @@ async def close_poll_command(message: Message):
         await bot.send_message(CHAT_ID, response_text)
         poll = db.get_poll(poll_id)
         if poll and poll.get('message_id'):
-            # Обновляем исходное сообщение в последний раз, убирая кнопки
             final_text = format_poll_text(poll_id)
             if final_text:
                 await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'], reply_markup=None)
@@ -224,7 +221,7 @@ async def scheduler():
                 try:
                     new_text = format_poll_text(poll['id'])
                     if poll.get('message_id') and new_text:
-                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'], reply_markup=None) # Убираем кнопки у закрытых опросов
+                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'], reply_markup=None)
                 except Exception as e:
                     print(f"Не удалось обновить сообщение для опроса #{poll['id']}: {e}")
         except Exception as e:
