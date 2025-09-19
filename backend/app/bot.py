@@ -118,7 +118,6 @@ async def process_bet_callback(query: CallbackQuery):
                         raise e
         else:
             await query.answer(f"❌ Ошибка: {result.get('error')}", show_alert=True)
-
     except Exception as e:
         print(f"Критическая ошибка в обработчике ставки: {e}")
         await query.answer("Произошла ошибка при обработке ставки.", show_alert=True)
@@ -191,10 +190,11 @@ async def close_poll_command(message: Message):
     except Exception as e:
         await message.reply(f"Произошла ошибка: {e}")
 
+# --- ✨ ИЗМЕНЕНИЕ: Запрашиваем всех игроков ---
 @dp.message(Command("winrate"))
 async def winrate_command(message: Message):
-    rating = db.get_rating(limit=10)
-    text = "🏆 <b>Топ-10 игроков по проценту побед:</b>\n\n"
+    rating = db.get_rating() # Убираем limit=10
+    text = "🏆 <b>Рейтинг всех игроков по проценту побед:</b>\n\n"
     if not rating:
         text += "Пока нет данных для рейтинга."
     else:

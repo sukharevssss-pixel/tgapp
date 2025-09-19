@@ -114,22 +114,30 @@ def auto_close_due_polls() -> List[Dict[str, Any]]:
     conn = get_conn()
     now_utc = datetime.now(timezone.utc)
     cur = conn.cursor()
-    cur.execute("SELECT id, message_id FROM polls WHERE is_open = 1")
-    all_open_polls = [dict(row) for row in cur.fetchall()]
+    # Получаем все опросы, которые могут быть закрыты
+    cur.execute("SELECT id, closes_at FROM polls WHERE is_open = 1")
+    all_open_polls = cur.fetchall()
     
-    polls_to_close = []
-    for poll in all_open_polls:
-        # SQLite stores datetime as string, so we parse it back
-        closes_at_dt = datetime.fromisoformat(db.get_poll(poll['id'])['closes_at'])
+    polls_to_close_ids = []
+    for poll_data in all_open_polls:
+        # SQLite хранит datetime как строку, поэтому парсим ее обратно в объект
+        closes_at_dt = datetime.fromisoformat(poll_data["closes_at"])
         if closes_at_dt <= now_utc:
-            polls_to_close.append(poll)
+            polls_to_close_ids.append(poll_data["id"])
 
-    if polls_to_close:
-        poll_ids = [p['id'] for p in polls_to_close]
-        cur.execute(f"UPDATE polls SET is_open = 0 WHERE id IN ({','.join('?' for _ in poll_ids)})", poll_ids)
+    if polls_to_close_ids:
+        cur.execute(f"UPDATE polls SET is_open = 0 WHERE id IN ({','.join('?' for _ in polls_to_close_ids)})", polls_to_close_ids)
         conn.commit()
+    
+    # Возвращаем данные о только что закрытых опросах
+    if polls_to_close_ids:
+        cur.execute(f"SELECT id, message_id FROM polls WHERE id IN ({','.join('?' for _ in polls_to_close_ids)})", polls_to_close_ids)
+        closed_polls_info = [dict(row) for row in cur.fetchall()]
+        conn.close()
+        return closed_polls_info
+
     conn.close()
-    return polls_to_close
+    return []
 
 
 def get_poll(poll_id: int) -> Dict[str, Any] | None:
@@ -242,7 +250,8 @@ def close_poll(creator_id: int, poll_id: int, winning_option_text: str) -> Dict[
     finally:
         conn.close()
         
-def get_rating(limit: int = 50) -> List[Dict[str, Any]]:
+# --- ✨ ИЗМЕНЕНИЕ: limit теперь опциональный ---
+def get_rating(limit: int = None) -> List[Dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
     cur.execute("SELECT telegram_id, username, balance, wins, losses FROM users")
@@ -254,7 +263,11 @@ def get_rating(limit: int = 50) -> List[Dict[str, Any]]:
         users.append(u)
     users.sort(key=lambda x: (x["winrate"], x["wins"]), reverse=True)
     conn.close()
-    return users[:limit]
+    
+    if limit:
+        return users[:limit]
+    return users # Если лимита нет, возвращаем всех
+
 
 def list_chests() -> List[Dict[str, Any]]:
     conn = get_conn()
@@ -263,6 +276,7 @@ def list_chests() -> List[Dict[str, Any]]:
     res = [dict(r) for r in cur.fetchall()]
     conn.close()
     return res
+
 
 def open_chest(telegram_id: int, chest_id: int) -> Dict[str, Any]:
     conn = get_conn()
