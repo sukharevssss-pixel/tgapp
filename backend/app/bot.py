@@ -1,6 +1,6 @@
 ﻿import os
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import httpx
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
@@ -51,9 +51,14 @@ def format_poll_text(poll_id: int) -> str | None:
         if bettors:
             for bettor in bettors:
                 text += f"      <i>└ {bettor['username']}: {bettor['amount']} монет</i>\n"
+    
     if poll.get('closes_at'):
-        closes_at_str = datetime.fromisoformat(poll['closes_at']).strftime('%H:%M')
-        text += f"\n<i>Ставки закроются в {closes_at_str}</i>"
+        moscow_tz = timezone(timedelta(hours=3))
+        utc_closes_at = datetime.fromisoformat(poll['closes_at'])
+        msk_closes_at = utc_closes_at.astimezone(moscow_tz)
+        closes_at_str = msk_closes_at.strftime('%H:%M')
+        text += f"\n<i>Ставки закроются в {closes_at_str} по МСК</i>"
+        
     return text
 
 # --- ОТПРАВКА И ОБРАБОТКА КНОПОК ---
@@ -106,7 +111,6 @@ async def process_bet_callback(query: CallbackQuery):
                         message_id=query.message.message_id, 
                         reply_markup=query.message.reply_markup
                     )
-                    print(f"Сообщение для опроса #{poll_id} успешно обновлено.")
                 except TelegramBadRequest as e:
                     if "message is not modified" in e.message:
                         print(f"Сообщение для опроса #{poll_id} не изменилось. Обновление пропущено.")

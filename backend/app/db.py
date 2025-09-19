@@ -4,7 +4,7 @@ import random
 from typing import List, Dict, Any
 import json
 import os
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 DB_PATH = Path(__file__).resolve().parent.parent / "tg_miniapp.db"
 
@@ -89,10 +89,10 @@ def get_user(telegram_id: int) -> Dict[str, Any] | None:
 def create_poll(creator_id: int, question: str, options: List[str]) -> int:
     conn = get_conn()
     cur = conn.cursor()
-    closes_at = datetime.now() + timedelta(minutes=20)
+    closes_at = datetime.now(timezone.utc) + timedelta(minutes=20)
     cur.execute(
         "INSERT INTO polls (question, creator_id, closes_at) VALUES (?, ?, ?)",
-        (question, creator_id, closes_at),
+        (question, creator_id, closes_at.isoformat()),
     )
     poll_id = cur.lastrowid
     for opt in options:
@@ -112,10 +112,18 @@ def set_poll_message_id(poll_id: int, message_id: int):
 
 def auto_close_due_polls() -> List[Dict[str, Any]]:
     conn = get_conn()
-    now = datetime.now()
+    now_utc = datetime.now(timezone.utc)
     cur = conn.cursor()
-    cur.execute("SELECT id, message_id FROM polls WHERE is_open = 1 AND closes_at <= ?", (now,))
-    polls_to_close = [dict(row) for row in cur.fetchall()]
+    cur.execute("SELECT id, message_id FROM polls WHERE is_open = 1")
+    all_open_polls = [dict(row) for row in cur.fetchall()]
+    
+    polls_to_close = []
+    for poll in all_open_polls:
+        # SQLite stores datetime as string, so we parse it back
+        closes_at_dt = datetime.fromisoformat(db.get_poll(poll['id'])['closes_at'])
+        if closes_at_dt <= now_utc:
+            polls_to_close.append(poll)
+
     if polls_to_close:
         poll_ids = [p['id'] for p in polls_to_close]
         cur.execute(f"UPDATE polls SET is_open = 0 WHERE id IN ({','.join('?' for _ in poll_ids)})", poll_ids)
@@ -172,7 +180,7 @@ def place_bet(telegram_id: int, poll_id: int, option_id: int, amount: int) -> Di
         cur.execute("SELECT is_open, closes_at FROM polls WHERE id = ?", (poll_id,))
         poll_row = cur.fetchone()
         if not poll_row: return {"ok": False, "error": "Опрос не найден"}
-        if poll_row["is_open"] != 1 or datetime.fromisoformat(poll_row["closes_at"]) <= datetime.now():
+        if poll_row["is_open"] != 1 or datetime.fromisoformat(poll_row["closes_at"]) <= datetime.now(timezone.utc):
             return {"ok": False, "error": "Ставки больше не принимаются"}
         if amount <= 0:
             return {"ok": False, "error": "Сумма ставки должна быть больше нуля"}
