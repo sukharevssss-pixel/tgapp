@@ -114,22 +114,20 @@ def auto_close_due_polls() -> List[Dict[str, Any]]:
     conn = get_conn()
     now_utc = datetime.now(timezone.utc)
     cur = conn.cursor()
-    # Получаем все опросы, которые могут быть закрыты
     cur.execute("SELECT id, closes_at FROM polls WHERE is_open = 1")
     all_open_polls = cur.fetchall()
     
     polls_to_close_ids = []
-    for poll_data in all_open_polls:
-        # SQLite хранит datetime как строку, поэтому парсим ее обратно в объект
-        closes_at_dt = datetime.fromisoformat(poll_data["closes_at"])
-        if closes_at_dt <= now_utc:
-            polls_to_close_ids.append(poll_data["id"])
+    if all_open_polls:
+        for poll_data in all_open_polls:
+            closes_at_dt = datetime.fromisoformat(poll_data["closes_at"])
+            if closes_at_dt <= now_utc:
+                polls_to_close_ids.append(poll_data["id"])
 
     if polls_to_close_ids:
         cur.execute(f"UPDATE polls SET is_open = 0 WHERE id IN ({','.join('?' for _ in polls_to_close_ids)})", polls_to_close_ids)
         conn.commit()
     
-    # Возвращаем данные о только что закрытых опросах
     if polls_to_close_ids:
         cur.execute(f"SELECT id, message_id FROM polls WHERE id IN ({','.join('?' for _ in polls_to_close_ids)})", polls_to_close_ids)
         closed_polls_info = [dict(row) for row in cur.fetchall()]
@@ -158,8 +156,11 @@ def get_poll(poll_id: int) -> Dict[str, Any] | None:
 def list_polls(open_only: bool = True) -> List[Dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
-    query = "SELECT * FROM polls WHERE is_open = 1 ORDER BY created_at DESC" if open_only else "SELECT * FROM polls ORDER BY created_at DESC"
-    cur.execute(query)
+    if open_only:
+        cur.execute("SELECT * FROM polls WHERE is_open = 1 ORDER BY created_at DESC")
+    else:
+        cur.execute("SELECT * FROM polls ORDER BY created_at DESC")
+    
     polls = []
     for p in cur.fetchall():
         poll = dict(p)
@@ -169,6 +170,15 @@ def list_polls(open_only: bool = True) -> List[Dict[str, Any]]:
         polls.append(poll)
     conn.close()
     return polls
+
+
+def list_all_polls() -> List[Dict[str, Any]]:
+    conn = get_conn()
+    cur = conn.cursor()
+    cur.execute("SELECT id, question, is_open, creator_id FROM polls ORDER BY id DESC")
+    all_polls = [dict(row) for row in cur.fetchall()]
+    conn.close()
+    return all_polls
 
 
 def get_bets_for_poll(poll_id: int) -> List[Dict[str, Any]]:
@@ -210,7 +220,7 @@ def place_bet(telegram_id: int, poll_id: int, option_id: int, amount: int) -> Di
         conn.close()
 
 
-def close_poll(creator_id: int, poll_id: int, winning_option_text: str) -> Dict[str, Any]:
+def close_poll(user_id: int, poll_id: int, winning_option_text: str) -> Dict[str, Any]:
     conn = get_conn()
     cur = conn.cursor()
     try:
@@ -218,31 +228,37 @@ def close_poll(creator_id: int, poll_id: int, winning_option_text: str) -> Dict[
         cur.execute("SELECT id, creator_id FROM polls WHERE id = ?", (poll_id,))
         poll = cur.fetchone()
         if not poll: return {"ok": False, "error": "Опрос не найден"}
-        if poll["creator_id"] != creator_id: return {"ok": False, "error": "Только создатель может закрыть опрос"}
+        
+        # Проверка на создателя удалена, теперь закрыть может любой
+        
         cur.execute("SELECT id FROM poll_options WHERE poll_id = ? AND lower(option_text) = lower(?)", (poll_id, winning_option_text.strip()))
         option_row = cur.fetchone()
         if not option_row: return {"ok": False, "error": "Такой вариант ответа не найден"}
         winning_option_id = option_row['id']
+        
         cur.execute("SELECT telegram_id, option_id, amount FROM bets WHERE poll_id = ?", (poll_id,))
         all_bets = [dict(r) for r in cur.fetchall()]
         cur.execute("SELECT IFNULL(SUM(amount), 0) as pool FROM bets WHERE poll_id = ?", (poll_id,))
         pool = cur.fetchone()["pool"] or 0
         cur.execute("SELECT IFNULL(SUM(amount), 0) as win_total FROM bets WHERE poll_id = ? AND option_id = ?", (poll_id, winning_option_id))
         win_total = cur.fetchone()["win_total"] or 0
+        
         winners_data = []
         if pool > 0 and win_total > 0:
             for bet in all_bets:
-                user_id = bet["telegram_id"]
+                bettor_id = bet["telegram_id"]
                 if bet["option_id"] == winning_option_id:
                     payout = (bet["amount"] * pool) // win_total
-                    cur.execute("UPDATE users SET balance = balance + ?, wins = wins + 1 WHERE telegram_id = ?", (payout, user_id))
-                    cur.execute("INSERT INTO transactions (telegram_id, amount, type, note) VALUES (?, ?, ?, ?)", (user_id, payout, "bet_win", f"Win poll {poll_id}"))
-                    user_info = get_user(user_id)
+                    cur.execute("UPDATE users SET balance = balance + ?, wins = wins + 1 WHERE telegram_id = ?", (payout, bettor_id))
+                    cur.execute("INSERT INTO transactions (telegram_id, amount, type, note) VALUES (?, ?, ?, ?)", (bettor_id, payout, "bet_win", f"Win poll {poll_id}"))
+                    user_info = get_user(bettor_id)
                     if user_info: winners_data.append({"username": user_info.get('username', 'N/A'), "payout": payout})
                 else: 
-                    cur.execute("UPDATE users SET losses = losses + 1 WHERE telegram_id = ?", (user_id,))
+                    cur.execute("UPDATE users SET losses = losses + 1 WHERE telegram_id = ?", (bettor_id,))
+        
         cur.execute("UPDATE polls SET is_open = 0, message_id = NULL WHERE id = ?", (poll_id,))
         conn.commit()
+        
         return {"ok": True, "pool": pool, "winners": winners_data, "winning_option_text": winning_option_text}
     except Exception as e:
         conn.rollback()
@@ -250,7 +266,7 @@ def close_poll(creator_id: int, poll_id: int, winning_option_text: str) -> Dict[
     finally:
         conn.close()
         
-# --- ✨ ИЗМЕНЕНИЕ: limit теперь опциональный ---
+
 def get_rating(limit: int = None) -> List[Dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
@@ -266,7 +282,7 @@ def get_rating(limit: int = None) -> List[Dict[str, Any]]:
     
     if limit:
         return users[:limit]
-    return users # Если лимита нет, возвращаем всех
+    return users
 
 
 def list_chests() -> List[Dict[str, Any]]:

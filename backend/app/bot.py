@@ -51,38 +51,25 @@ def format_poll_text(poll_id: int) -> str | None:
         if bettors:
             for bettor in bettors:
                 text += f"      <i>└ {bettor['username']}: {bettor['amount']} монет</i>\n"
-    
     if poll.get('closes_at'):
         moscow_tz = timezone(timedelta(hours=3))
         utc_closes_at = datetime.fromisoformat(poll['closes_at'])
         msk_closes_at = utc_closes_at.astimezone(moscow_tz)
         closes_at_str = msk_closes_at.strftime('%H:%M')
         text += f"\n<i>Ставки закроются в {closes_at_str} по МСК</i>"
-        
     return text
 
 # --- ОТПРАВКА И ОБРАБОТКА КНОПОК ---
 async def send_new_poll_notification(poll_id: int):
     text = format_poll_text(poll_id)
     poll = db.get_poll(poll_id)
-    if not text or not poll:
-        return
-
+    if not text or not poll: return
     fixed_bets = [100, 200, 500]
     keyboard_rows = []
-    
     for option in poll['options']:
-        button_row = []
-        for amount in fixed_bets:
-            callback_data = f"bet:{poll['id']}:{option['id']}:{amount}"
-            button_text = f"{option['option_text']} - {amount}"
-            button_row.append(
-                InlineKeyboardButton(text=button_text, callback_data=callback_data)
-            )
+        button_row = [InlineKeyboardButton(text=f"{option['option_text']} - {amount}", callback_data=f"bet:{poll['id']}:{option['id']}:{amount}") for amount in fixed_bets]
         keyboard_rows.append(button_row)
-        
     keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
-    
     sent_message = await bot.send_message(chat_id=CHAT_ID, text=text, reply_markup=keyboard)
     db.set_poll_message_id(poll_id, sent_message.message_id)
 
@@ -90,32 +77,19 @@ async def send_new_poll_notification(poll_id: int):
 async def process_bet_callback(query: CallbackQuery):
     try:
         _, poll_id_str, option_id_str, amount_str = query.data.split(':')
-        poll_id = int(poll_id_str)
-        option_id = int(option_id_str)
-        amount = int(amount_str)
-        telegram_id = query.from_user.id
-        username = query.from_user.username or f"user{telegram_id}"
-
+        poll_id, option_id, amount, telegram_id, username = int(poll_id_str), int(option_id_str), int(amount_str), query.from_user.id, query.from_user.username or f"user{query.from_user.id}"
         db.ensure_user(telegram_id, username)
         result = db.place_bet(telegram_id, poll_id, option_id, amount)
-
         if result.get("ok"):
             await query.answer(f"✅ Ваша ставка в {amount} монет принята!", show_alert=False)
             await asyncio.sleep(0.5) 
             new_text = format_poll_text(poll_id)
             if new_text:
                 try:
-                    await bot.edit_message_text(
-                        text=new_text, 
-                        chat_id=query.message.chat.id, 
-                        message_id=query.message.message_id, 
-                        reply_markup=query.message.reply_markup
-                    )
+                    await bot.edit_message_text(text=new_text, chat_id=query.message.chat.id, message_id=query.message.message_id, reply_markup=query.message.reply_markup)
                 except TelegramBadRequest as e:
-                    if "message is not modified" in e.message:
-                        print(f"Сообщение для опроса #{poll_id} не изменилось. Обновление пропущено.")
-                    else:
-                        raise e
+                    if "message is not modified" in e.message: print(f"Сообщение для опроса #{poll_id} не изменилось.")
+                    else: raise e
         else:
             await query.answer(f"❌ Ошибка: {result.get('error')}", show_alert=True)
     except Exception as e:
@@ -167,10 +141,12 @@ async def place_bet_command(message: Message):
 async def close_poll_command(message: Message):
     try:
         args = message.text.split(maxsplit=2)
-        if len(args) < 3: raise ValueError("Invalid format")
+        if len(args) < 3:
+            return await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/close ID Текст_победителя</code>\n<b>Пример:</b> <code>/close 1 Команда А</code>")
         poll_id, winning_option_text = int(args[1]), args[2]
         result = db.close_poll(message.from_user.id, poll_id, winning_option_text)
-        if not result.get("ok"): raise ValueError(result.get("error"))
+        if not result.get("ok"):
+            return await message.reply(f"❌ {result.get('error')}")
         winners = result.get('winners', [])
         response_text = f"🎉 <b>Опрос #{poll_id} завершен!</b>\n🏆 Победил вариант: <b>{result['winning_option_text']}</b>\n\n"
         if not winners:
@@ -185,15 +161,14 @@ async def close_poll_command(message: Message):
             final_text = format_poll_text(poll_id)
             if final_text:
                 await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'], reply_markup=None)
-    except (ValueError, IndexError):
-        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/close ID Текст_победителя</code>\n<b>Пример:</b> <code>/close 1 Команда А</code>")
+    except ValueError:
+        await message.reply("❌ ID опроса должен быть числом.")
     except Exception as e:
-        await message.reply(f"Произошла ошибка: {e}")
+        await message.reply(f"Произошла непредвиденная ошибка: {e}")
 
-# --- ✨ ИЗМЕНЕНИЕ: Запрашиваем всех игроков ---
 @dp.message(Command("winrate"))
 async def winrate_command(message: Message):
-    rating = db.get_rating() # Убираем limit=10
+    rating = db.get_rating()
     text = "🏆 <b>Рейтинг всех игроков по проценту побед:</b>\n\n"
     if not rating:
         text += "Пока нет данных для рейтинга."
@@ -201,6 +176,20 @@ async def winrate_command(message: Message):
         for i, user in enumerate(rating, 1):
             text += f"{i}. <b>{user['username']}</b> - {user['winrate']}% ({user['wins']} W / {user['losses']} L)\n"
     await message.answer(text)
+
+@dp.message(Command("allpolls"))
+async def list_all_polls_command(message: Message):
+    if message.from_user.id not in ADMIN_IDS: return
+    try:
+        all_polls = db.list_all_polls()
+        if not all_polls: return await message.reply("В базе данных пока нет ни одного опроса.")
+        response_text = "📋 <b>Полный список всех опросов:</b>\n\n"
+        for poll in all_polls:
+            status = "🟢 Открыт" if poll['is_open'] else "🔴 Закрыт"
+            response_text += f"ID: <code>{poll['id']}</code> | Статус: {status}\nВопрос: {poll['question']}\n--------------------\n"
+        await message.reply(response_text)
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
