@@ -8,6 +8,7 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
 from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.markdown import hbold
+from aiogram.exceptions import TelegramBadRequest
 from dotenv import load_dotenv
 
 import db
@@ -95,15 +96,27 @@ async def process_bet_callback(query: CallbackQuery):
 
         if result.get("ok"):
             await query.answer(f"✅ Ваша ставка в {amount} монет принята!", show_alert=False)
+            await asyncio.sleep(0.5) 
             new_text = format_poll_text(poll_id)
             if new_text:
-                # Обновляем сообщение, сохраняя кнопки
-                await bot.edit_message_text(new_text, query.message.chat.id, query.message.message_id, reply_markup=query.message.reply_markup)
+                try:
+                    await bot.edit_message_text(
+                        text=new_text, 
+                        chat_id=query.message.chat.id, 
+                        message_id=query.message.message_id, 
+                        reply_markup=query.message.reply_markup
+                    )
+                    print(f"Сообщение для опроса #{poll_id} успешно обновлено.")
+                except TelegramBadRequest as e:
+                    if "message is not modified" in e.message:
+                        print(f"Сообщение для опроса #{poll_id} не изменилось. Обновление пропущено.")
+                    else:
+                        raise e
         else:
             await query.answer(f"❌ Ошибка: {result.get('error')}", show_alert=True)
 
     except Exception as e:
-        print(f"Error in bet callback: {e}")
+        print(f"Критическая ошибка в обработчике ставки: {e}")
         await query.answer("Произошла ошибка при обработке ставки.", show_alert=True)
 
 # --- КОМАНДЫ БОТА ---
