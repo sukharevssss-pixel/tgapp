@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 from aiogram.utils.markdown import hbold
 from dotenv import load_dotenv
 
@@ -45,7 +45,8 @@ def format_poll_text(poll_id: int) -> str | None:
     text += "<b>Варианты и ставки:</b>\n"
     bets = db.get_bets_for_poll(poll_id)
     for opt in poll['options']:
-        text += f"  - {opt['option_text']} ({opt['total_bet']} монет)\n"
+        # Добавляем подсказку про кнопки
+        text += f"  - {opt['option_text']} ({opt['total_bet']} монет) <i>(кнопки ниже)</i>\n"
         bettors = [b for b in bets if b['option_id'] == opt['id']]
         if bettors:
             for bettor in bettors:
@@ -54,6 +55,56 @@ def format_poll_text(poll_id: int) -> str | None:
         closes_at_str = datetime.fromisoformat(poll['closes_at']).strftime('%H:%M')
         text += f"\n<i>Ставки закроются в {closes_at_str}</i>"
     return text
+
+# --- ОТПРАВКА И ОБРАБОТКА КНОПОК ---
+async def send_new_poll_notification(poll_id: int):
+    text = format_poll_text(poll_id)
+    poll = db.get_poll(poll_id)
+    if not text or not poll:
+        return
+
+    fixed_bets = [100, 200, 500]
+    keyboard_rows = []
+    
+    for option in poll['options']:
+        button_row = []
+        for amount in fixed_bets:
+            callback_data = f"bet:{poll['id']}:{option['id']}:{amount}"
+            button_row.append(
+                InlineKeyboardButton(text=str(amount), callback_data=callback_data)
+            )
+        keyboard_rows.append(button_row)
+        
+    keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+    
+    sent_message = await bot.send_message(chat_id=CHAT_ID, text=text, reply_markup=keyboard)
+    db.set_poll_message_id(poll_id, sent_message.message_id)
+
+@dp.callback_query(lambda c: c.data and c.data.startswith('bet:'))
+async def process_bet_callback(query: CallbackQuery):
+    try:
+        _, poll_id_str, option_id_str, amount_str = query.data.split(':')
+        poll_id = int(poll_id_str)
+        option_id = int(option_id_str)
+        amount = int(amount_str)
+        telegram_id = query.from_user.id
+        username = query.from_user.username or f"user{telegram_id}"
+
+        db.ensure_user(telegram_id, username)
+        result = db.place_bet(telegram_id, poll_id, option_id, amount)
+
+        if result.get("ok"):
+            await query.answer(f"✅ Ваша ставка в {amount} монет принята!", show_alert=False)
+            new_text = format_poll_text(poll_id)
+            if new_text:
+                # Обновляем сообщение, сохраняя кнопки
+                await bot.edit_message_text(new_text, query.message.chat.id, query.message.message_id, reply_markup=query.message.reply_markup)
+        else:
+            await query.answer(f"❌ Ошибка: {result.get('error')}", show_alert=True)
+
+    except Exception as e:
+        print(f"Error in bet callback: {e}")
+        await query.answer("Произошла ошибка при обработке ставки.", show_alert=True)
 
 # --- КОМАНДЫ БОТА ---
 @dp.message(Command("bet"))
@@ -65,10 +116,8 @@ async def create_poll_command(message: Message):
         if len(options) < 2: raise ValueError("Minimum 2 options required.")
         db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
         poll_id = db.create_poll(message.from_user.id, question, options)
-        text = format_poll_text(poll_id)
-        if text:
-            sent_message = await bot.send_message(CHAT_ID, text)
-            db.set_poll_message_id(poll_id, sent_message.message_id)
+        # Теперь уведомление с кнопками отправляется отсюда
+        await send_new_poll_notification(poll_id)
     except (ValueError, IndexError):
         await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте многострочный формат:\n<code>/bet\nВопрос\nВариант 1\nВариант 2</code>")
     except Exception as e:
@@ -76,6 +125,7 @@ async def create_poll_command(message: Message):
 
 @dp.message(Command("p"))
 async def place_bet_command(message: Message):
+    # Эта команда остается как альтернативный способ ставки
     try:
         args = message.text.split()
         if len(args) < 4: raise ValueError("Invalid format")
@@ -91,10 +141,7 @@ async def place_bet_command(message: Message):
             if poll.get('message_id'):
                 new_text = format_poll_text(poll_id)
                 if new_text:
-                    try:
-                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
-                    except Exception as e:
-                        print(f"⚠️ Ошибка при обновлении текста опроса #{poll_id}: {e}")
+                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
         else:
             await message.reply(f"❌ {result.get('error')}")
     except (ValueError, IndexError):
@@ -121,9 +168,10 @@ async def close_poll_command(message: Message):
         await bot.send_message(CHAT_ID, response_text)
         poll = db.get_poll(poll_id)
         if poll and poll.get('message_id'):
+            # Обновляем исходное сообщение в последний раз, убирая кнопки
             final_text = format_poll_text(poll_id)
             if final_text:
-                await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'])
+                await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'], reply_markup=None)
     except (ValueError, IndexError):
         await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/close ID Текст_победителя</code>\n<b>Пример:</b> <code>/close 1 Команда А</code>")
     except Exception as e:
@@ -146,7 +194,7 @@ async def scheduler():
     global last_backup_time
     print("--- Планировщик запущен ---")
     while True:
-        await asyncio.sleep(60 * 10) # Выполняем каждые 10 минут
+        await asyncio.sleep(60 * 10)
         if BACKEND_URL:
             try:
                 async with httpx.AsyncClient() as client:
@@ -176,7 +224,7 @@ async def scheduler():
                 try:
                     new_text = format_poll_text(poll['id'])
                     if poll.get('message_id') and new_text:
-                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'], reply_markup=None) # Убираем кнопки у закрытых опросов
                 except Exception as e:
                     print(f"Не удалось обновить сообщение для опроса #{poll['id']}: {e}")
         except Exception as e:
