@@ -91,7 +91,10 @@ async def place_bet_command(message: Message):
             if poll.get('message_id'):
                 new_text = format_poll_text(poll_id)
                 if new_text:
-                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+                    try:
+                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+                    except Exception as e:
+                        print(f"⚠️ Ошибка при обновлении текста опроса #{poll_id}: {e}")
         else:
             await message.reply(f"❌ {result.get('error')}")
     except (ValueError, IndexError):
