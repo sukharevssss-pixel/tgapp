@@ -10,4 +10,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY ./app /app
 
 # Запуск приложения (main.py должен лежать прямо в /app)
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["gunicorn", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:10000"]
