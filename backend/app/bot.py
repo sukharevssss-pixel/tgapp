@@ -227,15 +227,29 @@ async def get_db_command(message: Message):
 @dp.message(Command("ask"))
 async def ask_ai_command(message: Message):
     prompt = message.text.replace("/ask", "").strip()
-    if not prompt: return await message.reply("Пожалуйста, напишите ваш вопрос после команды /ask.")
+    if not prompt:
+        await message.reply("Пожалуйста, напишите ваш вопрос после команды /ask.")
+        return
+
+    thinking_message = None
     try:
         thinking_message = await message.reply("🧠 Думаю...")
         response = await text_model.generate_content_async(prompt)
-        await thinking_message.edit_text(response.text)
-    except Exception as e:
-        print(f"Ошибка при обращении к Gemini Text API: {e}")
-        await message.reply("Произошла ошибка при обращении к AI. Попробуйте позже.")
+        
+        if response.parts:
+            await thinking_message.edit_text(response.text)
+        else:
+            await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, сработали фильтры безопасности.")
 
+    except Exception as e:
+        # ✨ ГЛАВНОЕ ИЗМЕНЕНИЕ: Отправляем точную ошибку в чат
+        error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
+        if thinking_message:
+            await thinking_message.edit_text(error_text)
+        else:
+            await message.reply(error_text)
+
+# И также замените эту функцию
 @dp.message(Command("describe"))
 async def describe_image_command(message: Message):
     if not message.photo:
@@ -248,7 +262,6 @@ async def describe_image_command(message: Message):
     try:
         thinking_message = await message.reply("🖼️ Анализирую изображение...")
         
-        # Скачиваем фотографию в память
         photo: PhotoSize = message.photo[-1] 
         photo_bytes_io = io.BytesIO()
         await bot.download(photo, destination=photo_bytes_io)
@@ -256,25 +269,20 @@ async def describe_image_command(message: Message):
         
         img = Image.open(photo_bytes_io)
         
-        print("--- Отправка запроса в Gemini Vision API ---")
         response = await vision_model.generate_content_async([prompt, img])
         
-        # Проверяем, есть ли текст в ответе (на случай блокировки)
         if response.parts:
             await thinking_message.edit_text(response.text)
         else:
-            print("!!! ОШИБКА: Ответ от Gemini пустой, возможно, сработали фильтры безопасности.")
             await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, изображение было заблокировано фильтрами безопасности.")
 
     except Exception as e:
-        # ✨ ГЛАВНОЕ ИЗМЕНЕНИЕ: Печатаем точную ошибку в лог ✨
-        print(f"!!! КРИТИЧЕСКАЯ ОШИБКА при анализе изображения: {e}")
-        
-        # Если успели отправить "Думаю...", то редактируем его
+        # ✨ ГЛАВНОЕ ИЗМЕНЕНИЕ: Отправляем точную ошибку в чат
+        error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
         if thinking_message:
-            await thinking_message.edit_text("Не удалось проанализировать изображение. Попробуйте позже.")
+            await thinking_message.edit_text(error_text)
         else:
-            await message.reply("Не удалось проанализировать изображение. Попробуйте позже.")
+            await message.reply(error_text)
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
