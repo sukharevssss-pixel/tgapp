@@ -1,3 +1,18 @@
+import importlib.metadata
+
+# БЛОК ДЛЯ ДИАГНОСТИКИ ВЕРСИИ
+try:
+    version = importlib.metadata.version('google-generativeai')
+    print(f"✅ Обнаружена версия google-generativeai: {version}")
+    # Проверяем, что версия достаточно новая (стабильный API появился в ~0.5.0)
+    major, minor, _ = map(int, version.split('.'))
+    if major == 0 and minor < 5:
+        print("⚠️ ВНИМАНИЕ: Установлена СТАРАЯ версия библиотеки google-generativeai. Ожидаются проблемы с API.")
+except importlib.metadata.PackageNotFoundError:
+    print("❌ Библиотека google-generativeai НЕ НАЙДЕНА.")
+# КОНЕЦ БЛОКА ДИАГНОСТИКИ
+
+
 import asyncio
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException
@@ -19,6 +34,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="TG MiniApp Backend", lifespan=lifespan)
 
+# --- CORS ---
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -27,6 +43,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Pydantic-схемы (только необходимые) ---
 class InitPayload(BaseModel):
     telegram_id: int
     username: str | None = None
@@ -41,6 +58,8 @@ class OpenChestPayload(BaseModel):
     telegram_id: int
     chest_id: int
 
+
+# --- Пользователи ---
 @app.post("/api/auth")
 async def api_auth(payload: InitPayload):
     try:
@@ -60,6 +79,8 @@ async def api_me(telegram_id: int):
         raise HTTPException(status_code=404, detail="User not found")
     return user
 
+
+# --- Опросы (только для чтения и ставок из Mini App) ---
 @app.get("/api/polls")
 async def api_list_polls():
     return db.list_polls(open_only=True)
@@ -84,6 +105,8 @@ async def api_place_bet(payload: PlaceBetPayload):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# --- Сундуки ---
 @app.get("/api/chests")
 async def api_chests():
     return db.list_chests()
@@ -99,10 +122,14 @@ async def api_open_chest(payload: OpenChestPayload):
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# --- Рейтинг ---
 @app.get("/api/rating")
 async def api_rating():
     return db.get_rating()
 
+# --- Эндпоинт для "само-пинга" ---
 @app.get("/health")
 async def health_check():
+    """Простой эндпоинт для проверки, что сервис жив."""
     return {"status": "ok"}
