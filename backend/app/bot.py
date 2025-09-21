@@ -20,9 +20,10 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 CHAT_ID_STR = os.environ.get("CHAT_ID")
 ADMIN_IDS_STR = os.environ.get("ADMIN_IDS")
 BACKEND_URL = os.environ.get("BACKEND_URL")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-if not all([BOT_TOKEN, CHAT_ID_STR, ADMIN_IDS_STR]):
-    raise ValueError("BOT_TOKEN, CHAT_ID, и ADMIN_IDS должны быть установлены")
+if not all([BOT_TOKEN, CHAT_ID_STR, ADMIN_IDS_STR, GEMINI_API_KEY]):
+    raise ValueError("Все необходимые переменные окружения (BOT_TOKEN, CHAT_ID, ADMIN_IDS, GEMINI_API_KEY) должны быть установлены")
 
 try:
     CHAT_ID = int(CHAT_ID_STR)
@@ -30,7 +31,12 @@ try:
 except (ValueError, TypeError):
     raise ValueError("CHAT_ID и ADMIN_IDS должны быть числами")
 
-# --- Инициализация ---
+# --- Инициализация AI моделей Gemini ---
+genai.configure(api_key=GEMINI_API_KEY)
+text_model = genai.GenerativeModel('gemini-pro')
+vision_model = genai.GenerativeModel('gemini-pro-vision')
+
+# --- Инициализация Бота ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 dp = Dispatcher()
 
@@ -225,6 +231,50 @@ async def upload_db_command(message: Message):
         await message.reply("✅ Файл базы данных успешно загружен и заменен! Рекомендую перезапустить сервис на Render.")
     except Exception as e:
         await message.reply(f"❌ Произошла ошибка при загрузке файла: {e}")
+
+# --- ✨ НОВАЯ КОМАНДА: Скачивание базы данных ---
+@dp.message(Command("getdb"))
+async def get_db_command(message: Message):
+    if message.from_user.id not in ADMIN_IDS: return
+    try:
+        if os.path.exists(DB_PATH):
+            db_file = FSInputFile(DB_PATH)
+            await message.reply_document(db_file, caption="Вот текущая база данных.")
+        else:
+            await message.reply("Файл базы данных не найден на сервере.")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка при отправке файла: {e}")
+
+
+@dp.message(Command("ask"))
+async def ask_ai_command(message: Message):
+    prompt = message.text.replace("/ask", "").strip()
+    if not prompt: return await message.reply("Пожалуйста, напишите ваш вопрос после команды /ask.")
+    try:
+        thinking_message = await message.reply("🧠 Думаю...")
+        response = await text_model.generate_content_async(prompt)
+        await thinking_message.edit_text(response.text)
+    except Exception as e:
+        print(f"Ошибка при обращении к Gemini Text API: {e}")
+        await message.reply("Произошла ошибка при обращении к AI. Попробуйте позже.")
+
+@dp.message(Command("describe"))
+async def describe_image_command(message: Message):
+    if not message.photo: return await message.reply("Пожалуйста, прикрепите изображение к команде /describe.")
+    prompt = message.caption.replace("/describe", "").strip() if message.caption else "Опиши, что на этой картинке."
+    try:
+        thinking_message = await message.reply("🖼️ Анализирую изображение...")
+        photo: PhotoSize = message.photo[-1] 
+        photo_bytes_io = io.BytesIO()
+        await bot.download(photo, destination=photo_bytes_io)
+        photo_bytes_io.seek(0)
+        img = Image.open(photo_bytes_io)
+        response = await vision_model.generate_content_async([prompt, img])
+        await thinking_message.edit_text(response.text)
+    except Exception as e:
+        print(f"Ошибка при анализе изображения с Gemini Vision API: {e}")
+        await message.reply("Не удалось проанализировать изображение. Попробуйте позже.")
+
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
