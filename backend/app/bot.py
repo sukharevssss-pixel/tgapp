@@ -191,6 +191,41 @@ async def list_all_polls_command(message: Message):
     except Exception as e:
         await message.reply(f"Произошла ошибка: {e}")
 
+@dp.message(Command("addcoins"))
+async def add_coins_command(message: Message):
+    if message.from_user.id not in ADMIN_IDS: return
+    try:
+        args = message.text.split()
+        if len(args) != 3: raise ValueError("Invalid format")
+        target_username = args[1].replace('@', '')
+        amount = int(args[2])
+        if amount <= 0: return await message.reply("Сумма должна быть положительной.")
+        target_user = db.get_user_by_username(target_username)
+        if not target_user: return await message.reply(f"❌ Пользователь с ником @{target_username} не найден в базе.")
+        target_user_id = target_user['telegram_id']
+        result = db.add_balance(target_user_id, amount)
+        if result.get("ok"):
+            updated_user = result.get("user")
+            await message.reply(f"✅ Успешно!\nПользователю: @{updated_user['username']}\nНачислено: {amount} монет\nНовый баланс: {updated_user['balance']} монет.")
+        else:
+            await message.reply(f"❌ Ошибка: {result.get('error')}")
+    except (ValueError, IndexError):
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/addcoins @username Сумма</code>\n<b>Пример:</b> <code>/addcoins @Per4uk322 10000</code>")
+    except Exception as e:
+        await message.reply(f"Произошла непредвиденная ошибка: {e}")
+
+@dp.message(Command("uploaddb"))
+async def upload_db_command(message: Message):
+    if message.from_user.id not in ADMIN_IDS: return
+    if not message.document: return await message.reply("Пожалуйста, прикрепите файл `tg_miniapp.db` к этой команде.")
+    if message.document.file_name != 'tg_miniapp.db': return await message.reply(f"Неверное имя файла. Ожидается `tg_miniapp.db`, получен `{message.document.file_name}`.")
+    try:
+        await message.reply("Начинаю загрузку файла...")
+        await bot.download(message.document, destination=DB_PATH)
+        await message.reply("✅ Файл базы данных успешно загружен и заменен! Рекомендую перезапустить сервис на Render.")
+    except Exception as e:
+        await message.reply(f"❌ Произошла ошибка при загрузке файла: {e}")
+
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
 async def scheduler():
@@ -205,17 +240,15 @@ async def scheduler():
                 print(f"[{datetime.now().strftime('%H:%M:%S')}] Пинг самого себя для поддержания активности прошел успешно.")
             except Exception as e:
                 print(f"Ошибка само-пинга: {e}")
-        should_backup = False
-        if last_backup_time is None or (datetime.now() - last_backup_time).total_seconds() > 86400:
-            should_backup = True
-        if should_backup:
+        now_msk = datetime.now(timezone(timedelta(hours=3)))
+        if last_backup_time is None or (now_msk.hour == 9 and last_backup_time.date() != now_msk.date()):
             try:
-                print("--- Создание резервной копии базы данных... ---")
+                print("--- Создание ежедневной резервной копии... ---")
                 if os.path.exists(DB_PATH):
                     backup_file = FSInputFile(DB_PATH)
                     backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     await bot.send_document(chat_id=ADMIN_IDS[0], document=backup_file, caption=backup_caption)
-                    last_backup_time = datetime.now()
+                    last_backup_time = now_msk
                     print("✅ Резервная копия успешно отправлена.")
                 else:
                     print("⚠️ Файл бд не найден для создания бэкапа.")
