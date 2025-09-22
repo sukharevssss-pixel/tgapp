@@ -48,7 +48,14 @@ dp = Dispatcher()
 def format_poll_text(poll_id: int) -> str | None:
     poll = db.get_poll(poll_id)
     if not poll: return None
-    status = "🔴 СТАВКИ ЗАКРЫТЫ" if not poll['is_open'] else "🟢 СТАВКИ ПРИНИМАЮТСЯ"
+    
+    if poll['status'] == 'accepting_bets':
+        status = "🟢 СТАВКИ ПРИНИМАЮТСЯ"
+    elif poll['status'] == 'voting_closed':
+        status = "🔴 СТАВКИ ЗАКРЫТЫ"
+    else: # resolved
+        status = "🏁 ЗАВЕРШЕН"
+        
     text = f"📊 <b>Опрос #{poll['id']}</b> | {status}\n\n"
     text += f"<b>{poll['question']}</b>\n\n"
     total_pool = sum(opt['total_bet'] for opt in poll['options'])
@@ -61,12 +68,14 @@ def format_poll_text(poll_id: int) -> str | None:
         if bettors:
             for bettor in bettors:
                 text += f"      <i>└ {bettor['username']}: {bettor['amount']} монет</i>\n"
-    if poll.get('closes_at'):
+    
+    if poll['status'] == 'accepting_bets' and poll.get('closes_at'):
         moscow_tz = timezone(timedelta(hours=3))
         utc_closes_at = datetime.fromisoformat(poll['closes_at'])
         msk_closes_at = utc_closes_at.astimezone(moscow_tz)
         closes_at_str = msk_closes_at.strftime('%H:%M')
         text += f"\n<i>Ставки закроются в {closes_at_str} по МСК</i>"
+        
     return text
 
 # --- ОТПРАВКА И ОБРАБОТКА КНОПОК ---
@@ -122,6 +131,31 @@ async def create_poll_command(message: Message):
     except Exception as e:
         await message.reply(f"Произошла ошибка: {e}")
 
+@dp.message(Command("p"))
+async def place_bet_command(message: Message):
+    try:
+        args = message.text.split()
+        if len(args) < 4: raise ValueError("Invalid format")
+        poll_id, amount, option_text = int(args[1]), int(args[-1]), " ".join(args[2:-1])
+        db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
+        poll = db.get_poll(poll_id)
+        if not poll: return await message.reply("❌ Опрос с таким ID не найден.")
+        target_option = next((opt for opt in poll['options'] if opt['option_text'].lower() == option_text.lower()), None)
+        if not target_option: return await message.reply("❌ Вариант ответа не найден.")
+        result = db.place_bet(message.from_user.id, poll_id, target_option['id'], amount)
+        if result.get("ok"):
+            await message.reply("✅ Ваша ставка принята!")
+            if poll.get('message_id'):
+                new_text = format_poll_text(poll_id)
+                if new_text:
+                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+        else:
+            await message.reply(f"❌ {result.get('error')}")
+    except (ValueError, IndexError):
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/p ID Текст_варианта Сумма</code>\n<b>Пример:</b> <code>/p 1 Команда А 123</code>")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
+
 @dp.message(Command("close"))
 async def close_poll_command(message: Message):
     try:
@@ -170,7 +204,12 @@ async def list_all_polls_command(message: Message):
         if not all_polls: return await message.reply("В базе данных пока нет ни одного опроса.")
         response_text = "📋 <b>Полный список всех опросов:</b>\n\n"
         for poll in all_polls:
-            status = "🟢 Открыт" if poll['is_open'] else "🔴 Закрыт"
+            if poll['status'] == 'accepting_bets':
+                status = "🟢 Прием ставок"
+            elif poll['status'] == 'voting_closed':
+                status = "🔴 Ожидает результата"
+            else: # resolved
+                status = "🏁 Завершен"
             response_text += f"ID: <code>{poll['id']}</code> | Статус: {status}\nВопрос: {poll['question']}\n--------------------\n"
         await message.reply(response_text)
     except Exception as e:
@@ -223,66 +262,45 @@ async def get_db_command(message: Message):
     except Exception as e:
         await message.reply(f"Произошла ошибка при отправке файла: {e}")
 
-
 @dp.message(Command("ask"))
 async def ask_ai_command(message: Message):
     prompt = message.text.replace("/ask", "").strip()
-    if not prompt:
-        await message.reply("Пожалуйста, напишите ваш вопрос после команды /ask.")
-        return
-
-    thinking_message = None
+    if not prompt: return await message.reply("Пожалуйста, напишите ваш вопрос после команды /ask.")
     try:
         thinking_message = await message.reply("🧠 Думаю...")
         response = await text_model.generate_content_async(prompt)
-        
         if response.parts:
             await thinking_message.edit_text(response.text)
         else:
             await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, сработали фильтры безопасности.")
-
     except Exception as e:
-        # ✨ ГЛАВНОЕ ИЗМЕНЕНИЕ: Отправляем точную ошибку в чат
         error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
-        if thinking_message:
-            await thinking_message.edit_text(error_text)
-        else:
-            await message.reply(error_text)
+        await thinking_message.edit_text(error_text)
 
-# И также замените эту функцию
 @dp.message(Command("describe"))
 async def describe_image_command(message: Message):
-    if not message.photo:
-        await message.reply("Пожалуйста, прикрепите изображение к команде /describe.")
-        return
-
+    if not message.photo: return await message.reply("Пожалуйста, прикрепите изображение к команде /describe.")
     prompt = message.caption.replace("/describe", "").strip() if message.caption else "Опиши, что на этой картинке."
-    
     thinking_message = None
     try:
         thinking_message = await message.reply("🖼️ Анализирую изображение...")
-        
         photo: PhotoSize = message.photo[-1] 
         photo_bytes_io = io.BytesIO()
         await bot.download(photo, destination=photo_bytes_io)
         photo_bytes_io.seek(0)
-        
         img = Image.open(photo_bytes_io)
-        
         response = await vision_model.generate_content_async([prompt, img])
-        
         if response.parts:
             await thinking_message.edit_text(response.text)
         else:
             await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, изображение было заблокировано фильтрами безопасности.")
-
     except Exception as e:
-        # ✨ ГЛАВНОЕ ИЗМЕНЕНИЕ: Отправляем точную ошибку в чат
         error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
         if thinking_message:
             await thinking_message.edit_text(error_text)
         else:
             await message.reply(error_text)
+
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
@@ -304,7 +322,7 @@ async def scheduler():
                 print("--- Создание ежедневной резервной копии... ---")
                 if os.path.exists(DB_PATH):
                     backup_file = FSInputFile(DB_PATH)
-                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%м-%d %H:%M:%S')}"
                     await bot.send_document(chat_id=ADMIN_IDS[0], document=backup_file, caption=backup_caption)
                     last_backup_time = now_msk
                     print("✅ Резервная копия успешно отправлена.")

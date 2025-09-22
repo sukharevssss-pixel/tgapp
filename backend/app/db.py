@@ -29,7 +29,15 @@ def init_db():
     CREATE TABLE IF NOT EXISTS users ( telegram_id INTEGER PRIMARY KEY, username TEXT, balance INTEGER DEFAULT 1000, wins INTEGER DEFAULT 0, losses INTEGER DEFAULT 0 );
     """)
     cur.execute("""
-    CREATE TABLE IF NOT EXISTS polls ( id INTEGER PRIMARY KEY AUTOINCREMENT, question TEXT NOT NULL, creator_id INTEGER NOT NULL, is_open INTEGER DEFAULT 1, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, message_id INTEGER, closes_at TIMESTAMP );
+    CREATE TABLE IF NOT EXISTS polls (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        question TEXT NOT NULL,
+        creator_id INTEGER NOT NULL,
+        status TEXT DEFAULT 'accepting_bets',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        message_id INTEGER,
+        closes_at TIMESTAMP
+    );
     """)
     cur.execute("""
     CREATE TABLE IF NOT EXISTS poll_options ( id INTEGER PRIMARY KEY AUTOINCREMENT, poll_id INTEGER NOT NULL, option_text TEXT NOT NULL, FOREIGN KEY(poll_id) REFERENCES polls(id) ON DELETE CASCADE );
@@ -92,8 +100,8 @@ def create_poll(creator_id: int, question: str, options: List[str]) -> int:
     cur = conn.cursor()
     closes_at = datetime.now(timezone.utc) + timedelta(minutes=20)
     cur.execute(
-        "INSERT INTO polls (question, creator_id, closes_at) VALUES (?, ?, ?)",
-        (question, creator_id, closes_at.isoformat()),
+        "INSERT INTO polls (question, creator_id, closes_at, status) VALUES (?, ?, ?, ?)",
+        (question, creator_id, closes_at.isoformat(), 'accepting_bets'),
     )
     poll_id = cur.lastrowid
     for opt in options:
@@ -115,20 +123,18 @@ def auto_close_due_polls() -> List[Dict[str, Any]]:
     conn = get_conn()
     now_utc = datetime.now(timezone.utc)
     cur = conn.cursor()
-    cur.execute("SELECT id FROM polls WHERE is_open = 1")
+    cur.execute("SELECT id, closes_at FROM polls WHERE status = 'accepting_bets'")
     all_open_polls = cur.fetchall()
     
     polls_to_close_ids = []
     if all_open_polls:
         for poll_data in all_open_polls:
-            poll_details = get_poll(poll_data["id"])
-            if poll_details and poll_details.get("closes_at"):
-                closes_at_dt = datetime.fromisoformat(poll_details["closes_at"])
-                if closes_at_dt <= now_utc:
-                    polls_to_close_ids.append(poll_data["id"])
+            closes_at_dt = datetime.fromisoformat(poll_data["closes_at"])
+            if closes_at_dt <= now_utc:
+                polls_to_close_ids.append(poll_data["id"])
 
     if polls_to_close_ids:
-        cur.execute(f"UPDATE polls SET is_open = 0 WHERE id IN ({','.join('?' for _ in polls_to_close_ids)})", polls_to_close_ids)
+        cur.execute(f"UPDATE polls SET status = 'voting_closed' WHERE id IN ({','.join('?' for _ in polls_to_close_ids)})", polls_to_close_ids)
         conn.commit()
     
     if polls_to_close_ids:
@@ -159,11 +165,7 @@ def get_poll(poll_id: int) -> Dict[str, Any] | None:
 def list_polls(open_only: bool = True) -> List[Dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
-    if open_only:
-        cur.execute("SELECT * FROM polls WHERE is_open = 1 ORDER BY created_at DESC")
-    else:
-        cur.execute("SELECT * FROM polls ORDER BY created_at DESC")
-    
+    cur.execute("SELECT * FROM polls WHERE status IN ('accepting_bets', 'voting_closed') ORDER BY created_at DESC")
     polls = []
     for p in cur.fetchall():
         poll = dict(p)
@@ -178,7 +180,7 @@ def list_polls(open_only: bool = True) -> List[Dict[str, Any]]:
 def list_all_polls() -> List[Dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
-    cur.execute("SELECT id, question, is_open, creator_id FROM polls ORDER BY id DESC")
+    cur.execute("SELECT id, question, status, creator_id FROM polls ORDER BY id DESC")
     all_polls = [dict(row) for row in cur.fetchall()]
     conn.close()
     return all_polls
@@ -198,11 +200,11 @@ def place_bet(telegram_id: int, poll_id: int, option_id: int, amount: int) -> Di
     cur = conn.cursor()
     try:
         cur.execute("BEGIN IMMEDIATE")
-        cur.execute("SELECT is_open, closes_at FROM polls WHERE id = ?", (poll_id,))
+        cur.execute("SELECT status FROM polls WHERE id = ?", (poll_id,))
         poll_row = cur.fetchone()
         if not poll_row: return {"ok": False, "error": "Опрос не найден"}
-        if poll_row["is_open"] != 1 or datetime.fromisoformat(poll_row["closes_at"]) <= datetime.now(timezone.utc):
-            return {"ok": False, "error": "Ставки больше не принимаются"}
+        if poll_row["status"] != 'accepting_bets':
+            return {"ok": False, "error": "Ставки на этот опрос больше не принимаются"}
         if amount <= 0:
             return {"ok": False, "error": "Сумма ставки должна быть больше нуля"}
         cur.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,))
@@ -228,10 +230,10 @@ def close_poll(user_id: int, poll_id: int, winning_option_text: str) -> Dict[str
     cur = conn.cursor()
     try:
         cur.execute("BEGIN IMMEDIATE")
-        cur.execute("SELECT id, is_open FROM polls WHERE id = ?", (poll_id,))
+        cur.execute("SELECT id, status FROM polls WHERE id = ?", (poll_id,))
         poll = cur.fetchone()
         if not poll: return {"ok": False, "error": "Опрос не найден"}
-        if poll["is_open"] != 1: return {"ok": False, "error": "Этот опрос уже закрыт."}
+        if poll["status"] == 'resolved': return {"ok": False, "error": "Этот опрос уже был разрешен."}
         
         cur.execute("SELECT id FROM poll_options WHERE poll_id = ? AND lower(option_text) = lower(?)", (poll_id, winning_option_text.strip()))
         option_row = cur.fetchone()
@@ -247,20 +249,26 @@ def close_poll(user_id: int, poll_id: int, winning_option_text: str) -> Dict[str
         
         winners_data = []
         if pool > 0 and win_total > 0:
+            is_only_winners = (pool == win_total)
             for bet in all_bets:
                 bettor_id = bet["telegram_id"]
                 if bet["option_id"] == winning_option_id:
-                    payout = (bet["amount"] * pool) // win_total
+                    if is_only_winners:
+                        payout = bet["amount"] * 2
+                    else:
+                        payout = (bet["amount"] * pool) // win_total
                     cur.execute("UPDATE users SET balance = balance + ?, wins = wins + 1 WHERE telegram_id = ?", (payout, bettor_id))
                     cur.execute("INSERT INTO transactions (telegram_id, amount, type, note) VALUES (?, ?, ?, ?)", (bettor_id, payout, "bet_win", f"Win poll {poll_id}"))
                     user_info = get_user(bettor_id)
                     if user_info: winners_data.append({"username": user_info.get('username', 'N/A'), "payout": payout})
                 else: 
                     cur.execute("UPDATE users SET losses = losses + 1 WHERE telegram_id = ?", (bettor_id,))
-        
-        cur.execute("UPDATE polls SET is_open = 0, message_id = NULL WHERE id = ?", (poll_id,))
+        elif pool > 0 and win_total == 0:
+             for bet in all_bets:
+                cur.execute("UPDATE users SET losses = losses + 1 WHERE telegram_id = ?", (bet["telegram_id"],))
+
+        cur.execute("UPDATE polls SET status = 'resolved', message_id = NULL WHERE id = ?", (poll_id,))
         conn.commit()
-        
         return {"ok": True, "pool": pool, "winners": winners_data, "winning_option_text": winning_option_text}
     except Exception as e:
         conn.rollback()
@@ -268,7 +276,6 @@ def close_poll(user_id: int, poll_id: int, winning_option_text: str) -> Dict[str
     finally:
         conn.close()
         
-
 def get_rating(limit: int = None) -> List[Dict[str, Any]]:
     conn = get_conn()
     cur = conn.cursor()
@@ -281,11 +288,27 @@ def get_rating(limit: int = None) -> List[Dict[str, Any]]:
         users.append(u)
     users.sort(key=lambda x: (x["winrate"], x["wins"]), reverse=True)
     conn.close()
-    
     if limit:
         return users[:limit]
     return users
 
+def add_balance(telegram_id: int, amount: int) -> Dict[str, Any]:
+    conn = get_conn()
+    cur = conn.cursor()
+    try:
+        cur.execute("BEGIN IMMEDIATE")
+        cur.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
+        if not cur.fetchone(): return {"ok": False, "error": "Пользователь с таким ID не найден."}
+        cur.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amount, telegram_id))
+        cur.execute("INSERT INTO transactions (telegram_id, amount, type, note) VALUES (?, ?, ?, ?)", (telegram_id, amount, "admin_add", "Пополнение от администратора"))
+        conn.commit()
+        updated_user = get_user(telegram_id)
+        return {"ok": True, "user": updated_user}
+    except Exception as e:
+        conn.rollback()
+        return {"ok": False, "error": str(e)}
+    finally:
+        conn.close()
 
 def list_chests() -> List[Dict[str, Any]]:
     conn = get_conn()
@@ -294,7 +317,6 @@ def list_chests() -> List[Dict[str, Any]]:
     res = [dict(r) for r in cur.fetchall()]
     conn.close()
     return res
-
 
 def open_chest(telegram_id: int, chest_id: int) -> Dict[str, Any]:
     conn = get_conn()
@@ -316,30 +338,6 @@ def open_chest(telegram_id: int, chest_id: int) -> Dict[str, Any]:
         cur.execute("INSERT INTO transactions (telegram_id, amount, type, note) VALUES (?, ?, ?, ?)", (telegram_id, reward, "chest_reward", f"Reward chest {chest_id}"))
         conn.commit()
         return {"ok": True, "reward": reward}
-    except Exception as e:
-        conn.rollback()
-        return {"ok": False, "error": str(e)}
-    finally:
-        conn.close()
-
-
-def add_balance(telegram_id: int, amount: int) -> Dict[str, Any]:
-    conn = get_conn()
-    cur = conn.cursor()
-    try:
-        cur.execute("BEGIN IMMEDIATE")
-        cur.execute("SELECT * FROM users WHERE telegram_id = ?", (telegram_id,))
-        user = cur.fetchone()
-        if not user:
-            return {"ok": False, "error": "Пользователь с таким ID не найден."}
-        
-        cur.execute("UPDATE users SET balance = balance + ? WHERE telegram_id = ?", (amount, telegram_id))
-        cur.execute("INSERT INTO transactions (telegram_id, amount, type, note) VALUES (?, ?, ?, ?)", (telegram_id, amount, "admin_add", "Пополнение от администратора"))
-        conn.commit()
-        
-        updated_user = get_user(telegram_id)
-        return {"ok": True, "user": updated_user}
-
     except Exception as e:
         conn.rollback()
         return {"ok": False, "error": str(e)}
