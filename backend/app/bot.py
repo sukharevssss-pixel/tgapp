@@ -15,8 +15,8 @@ import io
 from PIL import Image
 from aiogram.types import PhotoSize
 
-from . import db
-from .db import DB_PATH 
+import db
+from db import DB_PATH 
 
 # --- Конфигурация ---
 load_dotenv()
@@ -128,31 +128,6 @@ async def create_poll_command(message: Message):
         await send_new_poll_notification(poll_id)
     except (ValueError, IndexError):
         await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте многострочный формат:\n<code>/bet\nВопрос\nВариант 1\nВариант 2</code>")
-    except Exception as e:
-        await message.reply(f"Произошла ошибка: {e}")
-
-@dp.message(Command("p"))
-async def place_bet_command(message: Message):
-    try:
-        args = message.text.split()
-        if len(args) < 4: raise ValueError("Invalid format")
-        poll_id, amount, option_text = int(args[1]), int(args[-1]), " ".join(args[2:-1])
-        db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
-        poll = db.get_poll(poll_id)
-        if not poll: return await message.reply("❌ Опрос с таким ID не найден.")
-        target_option = next((opt for opt in poll['options'] if opt['option_text'].lower() == option_text.lower()), None)
-        if not target_option: return await message.reply("❌ Вариант ответа не найден.")
-        result = db.place_bet(message.from_user.id, poll_id, target_option['id'], amount)
-        if result.get("ok"):
-            await message.reply("✅ Ваша ставка принята!")
-            if poll.get('message_id'):
-                new_text = format_poll_text(poll_id)
-                if new_text:
-                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
-        else:
-            await message.reply(f"❌ {result.get('error')}")
-    except (ValueError, IndexError):
-        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/p ID Текст_варианта Сумма</code>\n<b>Пример:</b> <code>/p 1 Команда А 123</code>")
     except Exception as e:
         await message.reply(f"Произошла ошибка: {e}")
 
