@@ -1,1 +1,1 @@
-fastapiuvicorn[standard]gunicornpython-dotenvaiogramPillowhttpxgoogle-generativeai==0.8.0
+fastapiuvicorn[standard]gunicornpython-dotenvaiogramPillowhttpx

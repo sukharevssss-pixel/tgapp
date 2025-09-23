@@ -2,18 +2,17 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 import httpx
+import base64
+import io
+from PIL import Image
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
 from aiogram.filters import Command
-from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from aiogram.types import Message, FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, PhotoSize
 from aiogram.utils.markdown import hbold
 from aiogram.exceptions import TelegramBadRequest
 from dotenv import load_dotenv
-import google.generativeai as genai
-import io
-from PIL import Image
-from aiogram.types import PhotoSize
 
 import db
 from db import DB_PATH 
@@ -27,18 +26,13 @@ BACKEND_URL = os.environ.get("BACKEND_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not all([BOT_TOKEN, CHAT_ID_STR, ADMIN_IDS_STR, GEMINI_API_KEY]):
-    raise ValueError("Все необходимые переменные окружения (BOT_TOKEN, CHAT_ID, ADMIN_IDS, GEMINI_API_KEY) должны быть установлены")
+    raise ValueError("Все необходимые переменные окружения должны быть установлены")
 
 try:
     CHAT_ID = int(CHAT_ID_STR)
     ADMIN_IDS = [int(admin_id.strip()) for admin_id in ADMIN_IDS_STR.split(',')]
 except (ValueError, TypeError):
     raise ValueError("CHAT_ID и ADMIN_IDS должны быть числами")
-
-# --- Инициализация AI моделей Gemini ---
-genai.configure(api_key=GEMINI_API_KEY)
-text_model = genai.GenerativeModel('gemini-pro')
-vision_model = genai.GenerativeModel('gemini-pro-vision')
 
 # --- Инициализация Бота ---
 bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
@@ -53,7 +47,7 @@ def format_poll_text(poll_id: int) -> str | None:
         status = "🟢 СТАВКИ ПРИНИМАЮТСЯ"
     elif poll['status'] == 'voting_closed':
         status = "🔴 СТАВКИ ЗАКРЫТЫ"
-    else: # resolved
+    else:
         status = "🏁 ЗАВЕРШЕН"
         
     text = f"📊 <b>Опрос #{poll['id']}</b> | {status}\n\n"
@@ -183,8 +177,7 @@ async def list_all_polls_command(message: Message):
                 status = "🟢 Прием ставок"
             elif poll['status'] == 'voting_closed':
                 status = "🔴 Ожидает результата"
-            else: # resolved
-                status = "🏁 Завершен"
+            else: status = "🏁 Завершен"
             response_text += f"ID: <code>{poll['id']}</code> | Статус: {status}\nВопрос: {poll['question']}\n--------------------\n"
         await message.reply(response_text)
     except Exception as e:
@@ -244,11 +237,15 @@ async def ask_ai_command(message: Message):
     thinking_message = None
     try:
         thinking_message = await message.reply("🧠 Думаю...")
-        response = await text_model.generate_content_async(prompt)
-        if response.parts:
-            await thinking_message.edit_text(response.text)
-        else:
-            await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, сработали фильтры безопасности.")
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro:generateContent?key={GEMINI_API_KEY}"
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}]}]}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, timeout=60.0)
+            response.raise_for_status()
+        result = response.json()
+        answer = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Не удалось извлечь ответ.")
+        await thinking_message.edit_text(answer)
     except Exception as e:
         error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
         if thinking_message: await thinking_message.edit_text(error_text)
@@ -265,12 +262,17 @@ async def describe_image_command(message: Message):
         photo_bytes_io = io.BytesIO()
         await bot.download(photo, destination=photo_bytes_io)
         photo_bytes_io.seek(0)
-        img = Image.open(photo_bytes_io)
-        response = await vision_model.generate_content_async([prompt, img])
-        if response.parts:
-            await thinking_message.edit_text(response.text)
-        else:
-            await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, изображение было заблокировано фильтрами безопасности.")
+        image_bytes = photo_bytes_io.read()
+        base64_image = base64.b64encode(image_bytes).decode('utf-8')
+        url = f"https://generativelanguage.googleapis.com/v1/models/gemini-pro-vision:generateContent?key={GEMINI_API_KEY}"
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": "image/jpeg", "data": base64_image}}]}]}
+        async with httpx.AsyncClient() as client:
+            response = await client.post(url, json=payload, timeout=60.0)
+            response.raise_for_status()
+        result = response.json()
+        answer = result.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "Не удалось извлечь ответ.")
+        await thinking_message.edit_text(answer)
     except Exception as e:
         error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
         if thinking_message: await thinking_message.edit_text(error_text)
