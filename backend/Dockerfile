@@ -18,5 +18,5 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Копируем все файлы приложения
 COPY . /app
 
-# Команда для запуска вашего приложения
+# ✨ ИСПРАВЛЕНИЕ: Указываем Gunicorn запускать main:app напрямую
 CMD ["gunicorn", "-w", "1", "-k", "uvicorn.workers.UvicornWorker", "main:app", "--bind", "0.0.0.0:10000"]
