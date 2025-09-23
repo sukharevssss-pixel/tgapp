@@ -15,8 +15,8 @@ import io
 from PIL import Image
 from aiogram.types import PhotoSize
 
-import db
-from db import DB_PATH 
+from . import db
+from .db import DB_PATH 
 
 # --- Конфигурация ---
 load_dotenv()
@@ -214,7 +214,7 @@ async def list_all_polls_command(message: Message):
         await message.reply(response_text)
     except Exception as e:
         await message.reply(f"Произошла ошибка: {e}")
-
+        
 @dp.message(Command("addcoins"))
 async def add_coins_command(message: Message):
     if message.from_user.id not in ADMIN_IDS: return
@@ -266,6 +266,7 @@ async def get_db_command(message: Message):
 async def ask_ai_command(message: Message):
     prompt = message.text.replace("/ask", "").strip()
     if not prompt: return await message.reply("Пожалуйста, напишите ваш вопрос после команды /ask.")
+    thinking_message = None
     try:
         thinking_message = await message.reply("🧠 Думаю...")
         response = await text_model.generate_content_async(prompt)
@@ -275,7 +276,8 @@ async def ask_ai_command(message: Message):
             await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, сработали фильтры безопасности.")
     except Exception as e:
         error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
-        await thinking_message.edit_text(error_text)
+        if thinking_message: await thinking_message.edit_text(error_text)
+        else: await message.reply(error_text)
 
 @dp.message(Command("describe"))
 async def describe_image_command(message: Message):
@@ -296,11 +298,8 @@ async def describe_image_command(message: Message):
             await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, изображение было заблокировано фильтрами безопасности.")
     except Exception as e:
         error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
-        if thinking_message:
-            await thinking_message.edit_text(error_text)
-        else:
-            await message.reply(error_text)
-
+        if thinking_message: await thinking_message.edit_text(error_text)
+        else: await message.reply(error_text)
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
