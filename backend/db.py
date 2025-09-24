@@ -228,11 +228,10 @@ def close_poll(user_id: int, poll_id: int, winning_option_id: int) -> Dict[str, 
     cur = conn.cursor()
     try:
         cur.execute("BEGIN IMMEDIATE")
-        cur.execute("SELECT id, status, creator_id FROM polls WHERE id = ?", (poll_id,))
+        cur.execute("SELECT id, status FROM polls WHERE id = ?", (poll_id,))
         poll = cur.fetchone()
         if not poll: return {"ok": False, "error": "Опрос не найден"}
         if poll["status"] == 'resolved': return {"ok": False, "error": "Этот опрос уже был разрешен."}
-        if poll["creator_id"] != user_id: return {"ok": False, "error": "Только создатель может закрыть опрос"}
         
         cur.execute("SELECT option_text FROM poll_options WHERE poll_id = ? AND id = ?", (poll_id, winning_option_id))
         option_row = cur.fetchone()

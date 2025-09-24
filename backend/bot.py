@@ -322,7 +322,7 @@ async def scheduler():
                 print("--- Создание ежедневной резервной копии... ---")
                 if os.path.exists(DB_PATH):
                     backup_file = FSInputFile(DB_PATH)
-                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%м-%d %H:%M:%S')}"
+                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     await bot.send_document(chat_id=ADMIN_IDS[0], document=backup_file, caption=backup_caption)
                     last_backup_time = now_msk
                     print("✅ Резервная копия успешно отправлена.")
