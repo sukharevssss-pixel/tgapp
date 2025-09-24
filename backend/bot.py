@@ -26,7 +26,7 @@ BACKEND_URL = os.environ.get("BACKEND_URL")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 if not all([BOT_TOKEN, CHAT_ID_STR, ADMIN_IDS_STR, GEMINI_API_KEY]):
-    raise ValueError("Все необходимые переменные окружения должны быть установлены")
+    raise ValueError("Все необходимые переменные окружения (BOT_TOKEN, CHAT_ID, ADMIN_IDS, GEMINI_API_KEY) должны быть установлены")
 
 try:
     CHAT_ID = int(CHAT_ID_STR)
@@ -189,7 +189,7 @@ async def close_poll_command(message: Message):
 @dp.message(Command("winrate"))
 async def winrate_command(message: Message):
     rating = db.get_rating()
-    text = "🏆 <b>Рейтинг всех игроков:</b>\n\n"
+    text = "🏆 <b>Рейтинг всех игроков по проценту побед:</b>\n\n"
     if not rating:
         text += "Пока нет данных для рейтинга."
     else:
@@ -205,9 +205,12 @@ async def list_all_polls_command(message: Message):
         if not all_polls: return await message.reply("В базе данных пока нет ни одного опроса.")
         response_text = "📋 <b>Полный список всех опросов:</b>\n\n"
         for poll in all_polls:
-            if poll['status'] == 'accepting_bets': status = "🟢 Прием ставок"
-            elif poll['status'] == 'voting_closed': status = "🔴 Ожидает результата"
-            else: status = "🏁 Завершен"
+            if poll['status'] == 'accepting_bets':
+                status = "🟢 Прием ставок"
+            elif poll['status'] == 'voting_closed':
+                status = "🔴 Ожидает результата"
+            else:
+                status = "🏁 Завершен"
             response_text += f"ID: <code>{poll['id']}</code> | Статус: {status}\nВопрос: {poll['question']}\n--------------------\n"
         await message.reply(response_text)
     except Exception as e:
@@ -236,6 +239,18 @@ async def add_coins_command(message: Message):
     except Exception as e:
         await message.reply(f"Произошла непредвиденная ошибка: {e}")
 
+@dp.message(Command("uploaddb"))
+async def upload_db_command(message: Message):
+    if message.from_user.id not in ADMIN_IDS: return
+    if not message.document: return await message.reply("Пожалуйста, прикрепите файл `tg_miniapp.db` к этой команде.")
+    if message.document.file_name != 'tg_miniapp.db': return await message.reply(f"Неверное имя файла. Ожидается `tg_miniapp.db`, получен `{message.document.file_name}`.")
+    try:
+        await message.reply("Начинаю загрузку файла...")
+        await bot.download(message.document, destination=DB_PATH)
+        await message.reply("✅ Файл базы данных успешно загружен и заменен! Рекомендую перезапустить сервис на Render.")
+    except Exception as e:
+        await message.reply(f"❌ Произошла ошибка при загрузке файла: {e}")
+
 @dp.message(Command("getdb"))
 async def get_db_command(message: Message):
     if message.from_user.id not in ADMIN_IDS: return
@@ -250,11 +265,42 @@ async def get_db_command(message: Message):
 
 @dp.message(Command("ask"))
 async def ask_ai_command(message: Message):
-    # ... (код без изменений)
+    prompt = message.text.replace("/ask", "").strip()
+    if not prompt: return await message.reply("Пожалуйста, напишите ваш вопрос после команды /ask.")
+    thinking_message = None
+    try:
+        thinking_message = await message.reply("🧠 Думаю...")
+        response = await text_model.generate_content_async(prompt)
+        if response.parts:
+            await thinking_message.edit_text(response.text)
+        else:
+            await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, сработали фильтры безопасности.")
+    except Exception as e:
+        error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
+        if thinking_message: await thinking_message.edit_text(error_text)
+        else: await message.reply(error_text)
 
 @dp.message(Command("describe"))
 async def describe_image_command(message: Message):
-    # ... (код без изменений)
+    if not message.photo: return await message.reply("Пожалуйста, прикрепите изображение к команде /describe.")
+    prompt = message.caption.replace("/describe", "").strip() if message.caption else "Опиши, что на этой картинке."
+    thinking_message = None
+    try:
+        thinking_message = await message.reply("🖼️ Анализирую изображение...")
+        photo: PhotoSize = message.photo[-1] 
+        photo_bytes_io = io.BytesIO()
+        await bot.download(photo, destination=photo_bytes_io)
+        photo_bytes_io.seek(0)
+        img = Image.open(photo_bytes_io)
+        response = await vision_model.generate_content_async([prompt, img])
+        if response.parts:
+            await thinking_message.edit_text(response.text)
+        else:
+            await thinking_message.edit_text("Не удалось получить ответ от AI. Возможно, изображение было заблокировано фильтрами безопасности.")
+    except Exception as e:
+        error_text = f"❌ Произошла детальная ошибка:\n\n<code>{e}</code>"
+        if thinking_message: await thinking_message.edit_text(error_text)
+        else: await message.reply(error_text)
 
 # --- ФОНОВЫЕ ЗАДАЧИ ---
 last_backup_time = None
@@ -264,21 +310,51 @@ async def scheduler():
     while True:
         await asyncio.sleep(60 * 10)
         if BACKEND_URL:
-            # ... (код само-пинга)
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.get(f"{BACKEND_URL}/health")
+                print(f"[{datetime.now().strftime('%H:%M:%S')}] Пинг самого себя для поддержания активности прошел успешно.")
+            except Exception as e:
+                print(f"Ошибка само-пинга: {e}")
         now_msk = datetime.now(timezone(timedelta(hours=3)))
         if last_backup_time is None or (now_msk.hour == 9 and last_backup_time.date() != now_msk.date()):
             try:
-                # ... (код бэкапа)
-                last_backup_time = now_msk
+                print("--- Создание ежедневной резервной копии... ---")
+                if os.path.exists(DB_PATH):
+                    backup_file = FSInputFile(DB_PATH)
+                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%м-%d %H:%M:%S')}"
+                    await bot.send_document(chat_id=ADMIN_IDS[0], document=backup_file, caption=backup_caption)
+                    last_backup_time = now_msk
+                    print("✅ Резервная копия успешно отправлена.")
+                else:
+                    print("⚠️ Файл бд не найден для создания бэкапа.")
             except Exception as e:
                 print(f"❌ Ошибка при создании бэкапа: {e}")
         try:
             polls_to_close = db.auto_close_due_polls()
             for poll in polls_to_close:
-                # ... (код автозакрытия)
+                try:
+                    new_text = format_poll_text(poll['id'])
+                    if poll.get('message_id') and new_text:
+                        await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'], reply_markup=None)
+                except Exception as e:
+                    print(f"Не удалось обновить сообщение для опроса #{poll['id']}: {e}")
         except Exception as e:
             print(f"Ошибка в планировщике (закрытие опросов): {e}")
 
 # --- ЗАПУСК БОТА ---
 async def start_bot():
-    # ... (код без изменений)
+    try:
+        me = await bot.get_me()
+        print(f"--- Бот @{me.username} успешно авторизован ---")
+    except Exception as e:
+        print(f"!!! КРИТИЧЕСКАЯ ОШИБКА: Не удалось подключиться к Telegram. Проверьте BOT_TOKEN. Ошибка: {e}")
+        return
+    print("--- Запуск планировщика и опроса Telegram ---")
+    asyncio.create_task(scheduler())
+    try:
+        await dp.start_polling(bot, skip_updates=True)
+    except Exception as e:
+        print(f"!!! КРИТИЧЕСКАЯ ОШИБКА: Бот упал во время работы с ошибкой: {e}")
+    finally:
+        print("!!! Бот ЗАВЕРШИЛ работу.")
