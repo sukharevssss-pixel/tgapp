@@ -156,7 +156,7 @@ def get_poll(poll_id: int) -> Dict[str, Any] | None:
         conn.close()
         return None
     poll = dict(row)
-    cur.execute("SELECT po.id, po.option_text, IFNULL(SUM(b.amount), 0) as total_bet FROM poll_options po LEFT JOIN bets b ON b.option_id = po.id WHERE po.poll_id = ? GROUP BY po.id", (poll_id,))
+    cur.execute("SELECT po.id, po.option_text, IFNULL(SUM(b.amount), 0) as total_bet FROM poll_options po LEFT JOIN bets b ON b.option_id = po.id WHERE po.poll_id = ? GROUP BY po.id ORDER BY po.id", (poll_id,))
     poll["options"] = [dict(r) for r in cur.fetchall()]
     conn.close()
     return poll
@@ -203,10 +203,8 @@ def place_bet(telegram_id: int, poll_id: int, option_id: int, amount: int) -> Di
         cur.execute("SELECT status FROM polls WHERE id = ?", (poll_id,))
         poll_row = cur.fetchone()
         if not poll_row: return {"ok": False, "error": "Опрос не найден"}
-        if poll_row["status"] != 'accepting_bets':
-            return {"ok": False, "error": "Ставки на этот опрос больше не принимаются"}
-        if amount <= 0:
-            return {"ok": False, "error": "Сумма ставки должна быть больше нуля"}
+        if poll_row["status"] != 'accepting_bets': return {"ok": False, "error": "Ставки на этот опрос больше не принимаются"}
+        if amount <= 0: return {"ok": False, "error": "Сумма ставки должна быть больше нуля"}
         cur.execute("SELECT balance FROM users WHERE telegram_id = ?", (telegram_id,))
         user_row = cur.fetchone()
         if not user_row: return {"ok": False, "error": "Пользователь не найден"}
@@ -225,27 +223,26 @@ def place_bet(telegram_id: int, poll_id: int, option_id: int, amount: int) -> Di
         conn.close()
 
 
-def close_poll(user_id: int, poll_id: int, winning_option_text: str) -> Dict[str, Any]:
+def close_poll(user_id: int, poll_id: int, winning_option_id: int) -> Dict[str, Any]:
     conn = get_conn()
     cur = conn.cursor()
     try:
         cur.execute("BEGIN IMMEDIATE")
-        cur.execute("SELECT id, status FROM polls WHERE id = ?", (poll_id,))
+        cur.execute("SELECT id, status, creator_id FROM polls WHERE id = ?", (poll_id,))
         poll = cur.fetchone()
         if not poll: return {"ok": False, "error": "Опрос не найден"}
         if poll["status"] == 'resolved': return {"ok": False, "error": "Этот опрос уже был разрешен."}
+        if poll["creator_id"] != user_id: return {"ok": False, "error": "Только создатель может закрыть опрос"}
         
-        cur.execute("SELECT id FROM poll_options WHERE poll_id = ? AND lower(option_text) = lower(?)", (poll_id, winning_option_text.strip()))
+        cur.execute("SELECT option_text FROM poll_options WHERE poll_id = ? AND id = ?", (poll_id, winning_option_id))
         option_row = cur.fetchone()
-        if not option_row: return {"ok": False, "error": "Такой вариант ответа не найден"}
-        winning_option_id = option_row['id']
+        if not option_row: return {"ok": False, "error": "Такой вариант ответа не принадлежит этому опросу."}
+        winning_option_text = option_row['option_text']
         
         cur.execute("SELECT telegram_id, option_id, amount FROM bets WHERE poll_id = ?", (poll_id,))
         all_bets = [dict(r) for r in cur.fetchall()]
-        cur.execute("SELECT IFNULL(SUM(amount), 0) as pool FROM bets WHERE poll_id = ?", (poll_id,))
-        pool = cur.fetchone()["pool"] or 0
-        cur.execute("SELECT IFNULL(SUM(amount), 0) as win_total FROM bets WHERE poll_id = ? AND option_id = ?", (poll_id, winning_option_id))
-        win_total = cur.fetchone()["win_total"] or 0
+        pool = sum(b['amount'] for b in all_bets)
+        win_total = sum(b['amount'] for b in all_bets if b['option_id'] == winning_option_id)
         
         winners_data = []
         if pool > 0 and win_total > 0:
@@ -253,10 +250,7 @@ def close_poll(user_id: int, poll_id: int, winning_option_text: str) -> Dict[str
             for bet in all_bets:
                 bettor_id = bet["telegram_id"]
                 if bet["option_id"] == winning_option_id:
-                    if is_only_winners:
-                        payout = bet["amount"] * 2
-                    else:
-                        payout = (bet["amount"] * pool) // win_total
+                    payout = bet["amount"] * 2 if is_only_winners else (bet["amount"] * pool) // win_total
                     cur.execute("UPDATE users SET balance = balance + ?, wins = wins + 1 WHERE telegram_id = ?", (payout, bettor_id))
                     cur.execute("INSERT INTO transactions (telegram_id, amount, type, note) VALUES (?, ?, ?, ?)", (bettor_id, payout, "bet_win", f"Win poll {poll_id}"))
                     user_info = get_user(bettor_id)

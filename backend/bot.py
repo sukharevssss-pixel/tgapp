@@ -61,8 +61,8 @@ def format_poll_text(poll_id: int) -> str | None:
     text += f"💰 Общий банк: {total_pool} монет\n\n"
     text += "<b>Варианты и ставки:</b>\n"
     bets = db.get_bets_for_poll(poll_id)
-    for opt in poll['options']:
-        text += f"  - {opt['option_text']} ({opt['total_bet']} монет)\n"
+    for i, opt in enumerate(poll['options'], 1):
+        text += f"  {i}. {opt['option_text']} ({opt['total_bet']} монет)\n"
         bettors = [b for b in bets if b['option_id'] == opt['id']]
         if bettors:
             for bettor in bettors:
@@ -130,16 +130,66 @@ async def create_poll_command(message: Message):
     except Exception as e:
         await message.reply(f"Произошла ошибка: {e}")
 
+@dp.message(Command("p"))
+async def place_bet_command(message: Message):
+    try:
+        args = message.text.split()
+        if len(args) < 4: raise ValueError("Invalid format")
+        poll_id, amount, option_text = int(args[1]), int(args[-1]), " ".join(args[2:-1])
+        db.ensure_user(message.from_user.id, message.from_user.username or f"user{message.from_user.id}")
+        poll = db.get_poll(poll_id)
+        if not poll: return await message.reply("❌ Опрос с таким ID не найден.")
+        target_option = next((opt for opt in poll['options'] if opt['option_text'].lower() == option_text.lower()), None)
+        if not target_option: return await message.reply("❌ Вариант ответа не найден.")
+        result = db.place_bet(message.from_user.id, poll_id, target_option['id'], amount)
+        if result.get("ok"):
+            await message.reply("✅ Ваша ставка принята!")
+            if poll.get('message_id'):
+                new_text = format_poll_text(poll_id)
+                if new_text:
+                    await bot.edit_message_text(new_text, CHAT_ID, poll['message_id'])
+        else:
+            await message.reply(f"❌ {result.get('error')}")
+    except (ValueError, IndexError):
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/p ID Текст_варианта Сумма</code>\n<b>Пример:</b> <code>/p 1 Команда А 123</code>")
+    except Exception as e:
+        await message.reply(f"Произошла ошибка: {e}")
+
 @dp.message(Command("close"))
 async def close_poll_command(message: Message):
     try:
         args = message.text.split(maxsplit=2)
         if len(args) < 3:
-            return await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/close ID Текст_победителя</code>\n<b>Пример:</b> <code>/close 1 Команда А</code>")
-        poll_id, winning_option_text = int(args[1]), args[2]
-        result = db.close_poll(message.from_user.id, poll_id, winning_option_text)
+            return await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/close ID Вариант</code>\nГде Вариант - это текст или номер.")
+
+        poll_id = int(args[1])
+        winner_identifier = args[2]
+
+        poll = db.get_poll(poll_id)
+        if not poll:
+            return await message.reply("Опрос с таким ID не найден.")
+
+        winning_option_id = None
+        
+        try:
+            option_index = int(winner_identifier)
+            if 1 <= option_index <= len(poll['options']):
+                winning_option_id = poll['options'][option_index - 1]['id']
+            else:
+                return await message.reply(f"Неверный номер варианта. Введите число от 1 до {len(poll['options'])}.")
+        except ValueError:
+            target_option = next((opt for opt in poll['options'] if opt['option_text'].strip().lower() == winner_identifier.strip().lower()), None)
+            if target_option:
+                winning_option_id = target_option['id']
+
+        if winning_option_id is None:
+            return await message.reply("Не удалось найти указанный вариант ответа.")
+
+        result = db.close_poll(message.from_user.id, poll_id, winning_option_id)
+        
         if not result.get("ok"):
             return await message.reply(f"❌ {result.get('error')}")
+
         winners = result.get('winners', [])
         response_text = f"🎉 <b>Опрос #{poll_id} завершен!</b>\n🏆 Победил вариант: <b>{result['winning_option_text']}</b>\n\n"
         if not winners:
@@ -148,12 +198,14 @@ async def close_poll_command(message: Message):
             response_text += "Поздравляем победителей:\n"
             for winner in winners:
                 response_text += f" - <b>{winner['username']}</b> выигрывает <b>{winner['payout']}</b> монет!\n"
+        
         await bot.send_message(CHAT_ID, response_text)
-        poll = db.get_poll(poll_id)
-        if poll and poll.get('message_id'):
+        
+        if poll.get('message_id'):
             final_text = format_poll_text(poll_id)
             if final_text:
                 await bot.edit_message_text(final_text, CHAT_ID, poll['message_id'], reply_markup=None)
+
     except ValueError:
         await message.reply("❌ ID опроса должен быть числом.")
     except Exception as e:
@@ -182,7 +234,8 @@ async def list_all_polls_command(message: Message):
                 status = "🟢 Прием ставок"
             elif poll['status'] == 'voting_closed':
                 status = "🔴 Ожидает результата"
-            else: status = "🏁 Завершен"
+            else:
+                status = "🏁 Завершен"
             response_text += f"ID: <code>{poll['id']}</code> | Статус: {status}\nВопрос: {poll['question']}\n--------------------\n"
         await message.reply(response_text)
     except Exception as e:
@@ -207,7 +260,7 @@ async def add_coins_command(message: Message):
         else:
             await message.reply(f"❌ Ошибка: {result.get('error')}")
     except (ValueError, IndexError):
-        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/addcoins @username Сумма</code>\n<b>Пример:</b> <code>/addcoins @Per4uk322 10000</code>")
+        await message.reply("❌ <b>Неверный формат.</b>\nИспользуйте: <code>/addcoins @username Сумма</code>\n<b>Пример:</b> <code>/addcoins @user123 10000</code>")
     except Exception as e:
         await message.reply(f"Произошла непредвиденная ошибка: {e}")
 
@@ -294,7 +347,7 @@ async def scheduler():
                 print("--- Создание ежедневной резервной копии... ---")
                 if os.path.exists(DB_PATH):
                     backup_file = FSInputFile(DB_PATH)
-                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%м-%d %H:%M:%S')}"
+                    backup_caption = f"🗓️ Резервная копия бд\nот {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
                     await bot.send_document(chat_id=ADMIN_IDS[0], document=backup_file, caption=backup_caption)
                     last_backup_time = now_msk
                     print("✅ Резервная копия успешно отправлена.")
